@@ -1,0 +1,41 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<script src="jquery-2.1.1.js"></script>
+<script src="jquery.easing.1.3.js"></script>
+<script src="rng.js"></script>
+<script src="warpgate.js"></script>
+<script src="warpgate.config.js"></script>
+<link rel="stylesheet" type="text/css" href="warpgate.css">
+<title>warpgate</title>
+</head>
+<body>
+
+<div id="viewport">
+	<canvas></canvas>
+	<div id="ifarea">
+		<div></div>
+	</div>
+	<div id="throughputarea">
+		<div id="tphead">edit eth0 maximum throughput</div>
+		<div>
+			<form id="tpform" action="javascript:void()">
+			<div id="tptext">Please enter the maximum achievable throughput speed for eth0:</div>
+			<div>
+				<input type="number" name="tpvalue" id="tpvalue" min="0" step="any" required="required" />
+				<select name="unit" id="tpunit">
+					<option value="1">Bit/s</option>
+					<option value="1000">KBit/s</option>
+					<option value="1000000">MBit/s</option>
+					<option value="1000000000">GBit/s</option>
+				</select>
+			</div>
+			<div><button id="tpcancel" type='button'>cancel</button><input type="submit" value="confirm" /></div>
+			</form>
+		</div>
+	</div>
+</div>
+
+</body>
+</html>

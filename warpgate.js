@@ -1,0 +1,1538 @@
+
+/*function drawTextAlongArc(str, centerX, centerY, radius, angle) {
+	var len = str.length, s;
+	ctx.save();
+	ctx.translate(centerX, centerY);
+	ctx.rotate((angle-1.5*Math.PI));
+	//ctx.rotate(-1 * (angle / len) / 2);
+	for(var n = 0; n < len; n++) {
+		ctx.rotate(0.012*Math.PI);
+		ctx.save();
+		ctx.translate(0, -1 * radius);
+		s = str[n];
+		ctx.fillText(s, 0, 0);
+		ctx.restore();
+	}
+	ctx.restore();
+}*/
+
+function Color() {
+	var self = this;
+	var h=0,s=0,v=0;
+	var rgbCss=null;
+	
+	this.getHue = function() {
+		return h;
+	}
+	
+	this.getSaturation = function() {
+		return s;
+	}
+	
+	this.getValue = function() {
+		return v;
+	}
+	
+	this.setHsv = function(_h, _s, _v) {
+		h = _h;
+		s = _s;
+		v = _v;
+		return self.addHue(0);
+	}
+	
+	this.copy = function() {
+		return Color.hsv(h,s,v);
+	}
+	
+	this.addHue = function(hue) {
+		h+= hue;
+		while(h<0) h+= 360;
+		while(h>360) h-= 360;
+		rgbCss = null;
+		return self;
+	}
+	
+	this.addColor = function(color) {
+		s+= color.getSaturation();
+		v+= color.getValue();
+		return self.addHue(color.getHue());
+	}
+	
+	this.toRgbArray = function() {
+		var c = v * s;
+		var h1 = h / 60;
+		var x = c * (1 - Math.abs((h1 % 2) - 1));
+		var m = v - c;
+		var rgb;
+		
+		if (typeof h == 'undefined') rgb = [0, 0, 0];
+		else if (h1 < 1) rgb = [c, x, 0];
+		else if (h1 < 2) rgb = [x, c, 0];
+		else if (h1 < 3) rgb = [0, c, x];
+		else if (h1 < 4) rgb = [0, x, c];
+		else if (h1 < 5) rgb = [x, 0, c];
+		else if (h1 <= 6) rgb = [c, 0, x];
+		
+		return [(255 * (rgb[0] + m))>>0, (255 * (rgb[1] + m))>>0, (255 * (rgb[2] + m)>>0)];
+	}
+	
+	var buildRgbCss = function() {
+		if(rgbCss==null) {
+			var arr = self.toRgbArray();
+			rgbCss = arr[0]+","+arr[1]+","+arr[2];
+		}
+	}
+	
+	this.toRgbCss = function() {
+		buildRgbCss();
+		return "rgb("+rgbCss+")";
+	}
+	
+	this.toRgbaCss = function(a) {
+		buildRgbCss();
+		return "rgba("+rgbCss+","+a+")";
+	}
+}
+
+Color.hsv = function(h,s,v) {
+	return (new Color()).setHsv(h,s,v);
+}
+
+function NetworkSpeed() {
+	var self=this;
+	var bitsps;
+	
+	this.setBits = function(bits) {
+		bitsps = bits;
+		return self;
+	}
+
+	this.getUnited = function() {
+		var rate = bitsps;
+		var unit = 1;
+		while(rate>=1000) {
+			rate/= 1000;
+			unit*= 1000;
+		}
+		rate = Math.round(rate*100)/100;
+		return [rate,unit];
+	}
+	
+	this.setUnited = function(speed, unit) {
+		while(unit>1) {
+			unit/= 1000;
+			speed*= 1000;
+		}
+		bitsps = speed;
+		return self;
+	}
+	
+	this.toText = function() {
+		var united = self.getUnited();
+		switch(united[1]) {
+		case 1: return united[0]+" Bit/s";
+		case 1000: return united[0]+" KBit/s";
+		case 1000000: return united[0]+" MBit/s";
+		case 1000000000: return united[0]+" GBit/s";
+		default: return united[0]+" ?/s";
+		}
+	}
+	
+	this.toBits = function() {
+		return bitsps;
+	}
+}
+
+NetworkSpeed.bits = function(bits) {
+	return (new NetworkSpeed()).setBits(bits);
+}
+
+NetworkSpeed.united = function(speed,unit) {
+	return (new NetworkSpeed()).setUnited(speed,unit);
+}
+
+
+function Warpgate() {
+	var globalRenderer;
+
+	function Particle(ring) {
+		var duration, angle, xs, ys, xe, ye, startTime;
+		
+		;(function() {
+			var startAngle = ring.getFrameStartAngle();
+			var endAngle = ring.getFrameEndAngle();
+			var outerRadius = ring.getInnerRadius();
+			var innerRadius = ring.getParent().getOuterRadius();
+			
+			duration = config.particle.progressDurationMin + (config.particle.progressDurationMax-config.particle.progressDurationMin)*Math.random();
+			angle = startAngle + (endAngle-startAngle)*Math.random();
+			xs = Math.cos(angle)*outerRadius + globalRenderer.getCenterX();
+			ys = Math.sin(angle)*outerRadius + globalRenderer.getCenterY();
+			xe = Math.cos(angle)*innerRadius + globalRenderer.getCenterX();
+			ye = Math.sin(angle)*innerRadius + globalRenderer.getCenterY();
+			startTime = performance.now();
+		})();
+		
+		this.draw = function(ctx, time, timediff) {
+			// progress update
+			var progress = jQuery.easing[config.particle.progressEasingFunction]((time-startTime)/duration, (time-startTime), 0, 1, duration);
+			if(progress>1) return true;
+			
+			// params
+			var x = xs + (xe-xs)*progress;
+			var y = ys + (ye-ys)*progress;
+			var r = config.particle.sizeStart + (config.particle.sizeEnd-config.particle.sizeStart)*progress;
+			var l = config.particle.lightStart + (config.particle.lightEnd-config.particle.lightStart)*progress;
+			
+			// fill style
+			var gradient = ctx.createRadialGradient(x, y, 0, x, y, r);
+			gradient.addColorStop(0, "rgba(255,255,255,"+l+")");
+			gradient.addColorStop(0.2, "rgba(255,255,255,"+l+")");
+			gradient.addColorStop(0.2, ring.getInterface().getColor(0).toRgbaCss(l));
+			gradient.addColorStop(1, "rgba(0,0,0,0)");
+			ctx.fillStyle = gradient;
+			
+			// render
+			ctx.beginPath();
+			ctx.arc(x, y, r, Math.PI*2, false);
+			ctx.fill();
+			
+			return false;
+		}
+
+	}
+
+	function RingPrototype() {
+		var self = this;
+		var tcObject;
+		var needsChildrenUpdate;
+		
+		this.initProto = function(itcObject) {
+			needsChildrenUpdate = false;
+			tcObject = itcObject;
+		}
+		
+		this.setChildrenNeedUpdate = function() {
+			needsChildrenUpdate = true;
+			var children = tcObject.getChildren();
+			for (var i = children.length - 1; i >= 0; i--) {
+				children[i].getRing().setChildrenNeedUpdate();
+			}
+		}
+		
+		var createChildUpdateContext = function() {
+			var children = tcObject.getChildren();
+			var childrenCount = children.length;
+			var childrenRateSum = 0;
+			for(var i=0; i<children.length; i++) {
+				if(children[i].isInvalid() || children[i].getRing().isHidden()) {
+					childrenCount--;
+				} else {
+					childrenRateSum+= children[i].getSortingRate();
+				}
+			}
+			var childrenGapAngle = childrenCount<=1 ? 0 : self.getDestAngle()*config.ring.gapShare;
+			var childrenUsableAngle = self.getDestAngle() - childrenGapAngle;
+			var childGapAngle = childrenCount==0 ? 0 : childrenGapAngle/childrenCount;
+			return {levelRateSum: childrenRateSum, levelUsableAngle: childrenUsableAngle, gapAngle: childGapAngle, levelStartAngle: self.getDestStartAngle()};
+		}
+		
+		var updateChildren = function(context) {
+			var children = tcObject.getChildren();
+			var sortedChildren = children.slice();
+			sortedChildren.sort(function(a,b) {
+				return a.getSortingRate() - b.getSortingRate();
+			});
+			
+			for(var i=0; i<children.length; i++) {
+				sortedChildren[i].getRing().updateRingSize(context);
+			}
+			
+			for(var i=0; i<children.length; i++) {
+				children[i].getRing().updateRingLocation(context);
+			}
+		}
+		
+		this.updateAllChildren = function() {
+			var children = tcObject.getChildren();
+			if(children.length > 0) {
+				if(needsChildrenUpdate) {
+					var context = createChildUpdateContext();
+					updateChildren(context);
+					needsChildrenUpdate = false;
+				}
+				
+				for(var i=0; i<children.length; i++) {
+					children[i].getRing().updateAllChildren();
+				}
+			}
+		}
+
+		this.overrideExpansionMode = function(mode) {
+		}
+	}
+
+	function Blackhole() {
+		RingPrototype.call(this);
+		
+		this.getWidth = function() {
+			return config.ring.widthStart;
+		}
+		
+		this.getOuterRadius = function() {
+			return 0;
+		}
+
+		this.getRadiusChange = function() {
+			return config.ring.radiusStart;
+		}
+		
+		this.getFrameStartAngle = this.getDestStartAngle = function() {
+			return 1.5*Math.PI;
+		}
+		
+		this.getDestAngle = function() {
+			return 2*Math.PI;
+		}
+	}
+	Blackhole.prototype = Object.create(RingPrototype);
+	Blackhole.prototype.constructor = Blackhole;
+
+	function Ring() {
+		RingPrototype.call(this);
+		var self = this;
+		var EXP_NORMAL=0, EXP_EXPANDED=1, EXP_HIDDEN=2, EXP_EXPANDED_HIDDEN=3, EXP_HIDDEN_PARENT=4;
+		var tcObject, width, innerRadius, outerRadius;
+		var destAngle, destStartAngle, destEndAngle, destOpacity;
+		var lastStartAngle, lastEndAngle, lastOpacity;
+		var frameCenterX, frameCenterY, frameStartAngle, frameEndAngle, frameCurrentRate, frameOpacity;
+		var spawnIterator, expansionMode;
+		var lastLocationUpdateTime, lastOpacityUpdateTime;
+		
+		this.init = function(itcObject, preRing) {
+			self.initProto(itcObject);
+			tcObject = itcObject;
+			width = Math.max(config.ring.widthMin, Math.min(config.ring.widthMax, tcObject.getParent().getRing().getWidth()+config.ring.widthChange));
+			innerRadius = tcObject.getParent().getRing().getOuterRadius() + tcObject.getParent().getRing().getRadiusChange();
+			outerRadius = innerRadius + width;
+			lastStartAngle = lastEndAngle = frameStartAngle = frameEndAngle = (preRing==null ? tcObject.getParent().getRing().getFrameStartAngle() : preRing.getFrameEndAngle());
+			lastOpacity = frameOpacity = destOpacity = 0;
+			setOpacity(1);
+			spawnIterator = Math.random();
+			expansionMode = EXP_NORMAL;
+		}
+
+		var setOpacity = function(opac) {
+			lastOpacity = frameOpacity;
+			lastOpacityUpdateTime = performance.now();
+			destOpacity = opac;
+		}
+
+		this.getParent = function() {
+			return tcObject.getParent().getRing();
+		}
+
+		this.getSiblings = function() {
+			var siblings = [];
+			var children = tcObject.getParent().getChildren();
+			for (var i = children.length - 1; i >= 0; i--) {
+				if(children[i]!=tcObject) siblings.push(children[i].getRing());
+			};
+			return siblings;
+		}
+
+		this.getInterface = function() {
+			return tcObject.getInterface();
+		}
+		
+		this.getWidth = function() {
+			return width;
+		}
+		
+		this.getInnerRadius = function() {
+			return innerRadius;
+		}
+		
+		this.getOuterRadius = function() {
+			return outerRadius;
+		}
+
+		this.getRadiusChange = function() {
+			return config.ring.radiusChange;
+		}
+		
+		this.getDestAngle = function() {
+			return destAngle;
+		}
+		
+		this.getDestStartAngle = function() {
+			return destStartAngle;
+		}
+		
+		this.getFrameStartAngle = function() {
+			return frameStartAngle;
+		}
+		
+		this.getFrameEndAngle = function() {
+			return frameEndAngle;
+		}
+
+		this.overrideExpansionMode = function(mode, objectToExclude, includeParents) {
+			var propagate = false;
+			if(mode==EXP_HIDDEN) {
+				if(expansionMode==EXP_NORMAL) {
+					if(includeParents) expansionMode = EXP_HIDDEN_PARENT;
+					else expansionMode = EXP_HIDDEN;
+					setOpacity(0);
+					propagate = true;
+				} else if(expansionMode==EXP_EXPANDED) {
+					expansionMode = EXP_EXPANDED_HIDDEN;
+					setOpacity(0);
+					propagate = true;
+				}
+			} else if(mode==EXP_NORMAL) {
+				if(expansionMode==EXP_HIDDEN || expansionMode==EXP_HIDDEN_PARENT) {
+					expansionMode = EXP_NORMAL;
+					setOpacity(1);
+					propagate = true;
+				} else if(expansionMode==EXP_EXPANDED_HIDDEN) {
+					expansionMode = EXP_EXPANDED;
+					setOpacity(1);
+					propagate = true;
+					includeParents = false;
+				}
+			}
+			if(propagate) {
+				self.getParent().setChildrenNeedUpdate();
+				if(includeParents) self.getParent().overrideExpansionMode(mode,objectToExclude,true);
+				var children = tcObject.getChildren();
+				for (var i = 0; i < children.length; i++) {
+					if(children[i]!=objectToExclude) children[i].getRing().overrideExpansionMode(mode, objectToExclude, false);
+				};
+			}
+		}
+
+		this.expand = function() {
+			if(expansionMode==EXP_NORMAL && tcObject.getParent()!=self.getInterface().getDev()) {
+				self.getParent().overrideExpansionMode(EXP_HIDDEN, tcObject, true);
+				expansionMode = EXP_EXPANDED;
+				self.getInterface().getDev().getRing().updateAllChildren();
+			}
+		}
+
+		this.retract = function() {
+			if(expansionMode==EXP_EXPANDED) {
+				self.getParent().overrideExpansionMode(EXP_NORMAL, tcObject, true);
+				expansionMode = EXP_NORMAL;
+				self.getInterface().getDev().getRing().updateAllChildren();
+			} else if(expansionMode==EXP_EXPANDED_HIDDEN) {
+				expansionMode = EXP_HIDDEN_PARENT;
+			}
+		}
+
+		this.isExpanded = function() {
+			return expansionMode==EXP_EXPANDED || expansionMode==EXP_EXPANDED_HIDDEN;
+		}
+
+		this.isHidden = function() {
+			return expansionMode==EXP_HIDDEN;
+		}
+
+		this.updateRingSize = function(context) {
+			if(tcObject.isInvalid()) {
+				destAngle = 0;
+			} else {
+				var computedAngle = context.levelUsableAngle*tcObject.getSortingRate()/context.levelRateSum;
+				destAngle = /*Math.max(ringAngleMin,*/computedAngle/*)*/;
+				var angleOverusage = destAngle-computedAngle;
+				if(destAngle > context.levelUsableAngle) angleOverusage = context.levelUsableAngle;
+				context.levelUsableAngle-= angleOverusage;
+			}
+		}
+		
+		this.updateRingLocation = function(context) {
+			lastStartAngle = frameStartAngle;
+			lastEndAngle = frameEndAngle;
+			lastOpacity = frameOpacity;
+			destStartAngle = context.levelStartAngle + context.gapAngle/2;
+			if(!self.isHidden()) {
+				destEndAngle = destStartAngle+destAngle;
+				if(destAngle!=0) context.levelStartAngle = destEndAngle + context.gapAngle/2;
+			} else {
+				destEndAngle = destStartAngle;
+			}
+			lastLocationUpdateTime = performance.now();
+		}
+		
+		this.prepareFrame = function(time,timediff) {
+			frameCenterX = globalRenderer.getCenterX();
+			frameCenterY = globalRenderer.getCenterY();
+
+			if(time > lastOpacityUpdateTime+config.ring.opacityAnimationDuration) {
+				frameOpacity = destOpacity;
+			} else {
+				var progress = jQuery.easing[config.ring.opacityAnimationEasingFunction]((time-lastOpacityUpdateTime)/config.ring.opacityAnimationDuration, time-lastOpacityUpdateTime, 0, 1, config.ring.opacityAnimationDuration);
+				frameOpacity = lastOpacity + (1-lastOpacity)*progress;
+			}
+			
+			if(time > lastLocationUpdateTime+config.ring.animationDuration) {
+				frameStartAngle = destStartAngle;
+				frameEndAngle = destEndAngle;
+				if(tcObject.isInvalid()) return true;
+			} else {
+				var progress = jQuery.easing[config.ring.animationEasingFunction]((time-lastLocationUpdateTime)/config.ring.animationDuration, time-lastLocationUpdateTime, 0, 1, config.ring.animationDuration);
+				frameStartAngle = lastStartAngle + (destStartAngle-lastStartAngle)*progress;
+				frameEndAngle = lastEndAngle + (destEndAngle-lastEndAngle)*progress;
+			}
+			
+			var lastValueUpdateTime = tcObject.getLastValueUpdateTime();
+			if(time > lastValueUpdateTime+config.ring.usageAnimationDuration) {
+				frameCurrentRate = tcObject.getCurrentRate();
+			} else {
+				var progress = jQuery.easing[config.ring.usageAnimationEasingFunction]((time-lastValueUpdateTime)/config.ring.usageAnimationDuration, time-lastValueUpdateTime, 0, 1, config.ring.usageAnimationDuration);
+				frameCurrentRate = tcObject.getLastCurrentRate() + (tcObject.getCurrentRate()-tcObject.getLastCurrentRate())*progress;
+			}
+			
+			if(!self.isHidden()) {
+				spawnIterator+= (config.ring.particleSpawnMax*Math.min(1000,timediff)/1000) * Math.min(tcObject.getCurrentRate()/tcObject.getInterface().getThroughputRaw(),1);
+				while(spawnIterator > 1) {
+					spawnIterator-= 1;
+					tcObject.getInterfaceRenderer().getParticles().push(new Particle(self));
+				}
+			}
+			
+			return false;
+		}
+		
+		this.drawWarning = function(ctx) {
+			if(frameCurrentRate>config.ring.warningThreshold*tcObject.getCeil()) {
+				ctx.strokeStyle = config.ring.warningColor.toRgbaCss(frameOpacity);
+				ctx.beginPath();
+				ctx.arc(frameCenterX,frameCenterY,innerRadius-1,frameEndAngle,frameStartAngle,true);
+				ctx.arc(frameCenterX,frameCenterY,outerRadius+1,frameStartAngle,frameEndAngle,false);
+				ctx.closePath();
+				ctx.stroke();
+			}
+		}
+		
+		this.drawRing = function(ctx) {
+			if(frameStartAngle==frameEndAngle) return;
+
+			// draw normal ring
+			ctx.fillStyle = config.ring.backgroundColor.toRgbaCss(frameOpacity);
+			ctx.beginPath();
+			ctx.arc(frameCenterX,frameCenterY,innerRadius,frameEndAngle,frameStartAngle,true);
+			ctx.arc(frameCenterX,frameCenterY,outerRadius,frameStartAngle,frameEndAngle,false);
+			ctx.closePath();
+			ctx.fill();
+
+			var pos = globalRenderer.getMousePos();
+			if(ctx.isPointInPath(pos.x, pos.y)) {
+				ctx.strokeStyle = config.ring.selectionColor.toRgbCss();
+				if(globalRenderer.wasJustClicked()) {
+					if(self.isExpanded()) self.retract();
+					else self.expand();
+				}
+			} else {
+				ctx.strokeStyle = tcObject.getInterface().getColor(tcObject.getType()).toRgbaCss(frameOpacity);
+			}
+			ctx.stroke();
+
+			// draw ring usage
+			if(frameCurrentRate>0) {
+				var usageEndAngle = frameStartAngle + (frameEndAngle-frameStartAngle)*Math.min(frameCurrentRate/tcObject.getRate(), 1);
+				ctx.fillStyle = tcObject.getInterface().getColor(tcObject.getType()).toRgbaCss(frameOpacity);
+				ctx.beginPath();
+				ctx.arc(frameCenterX,frameCenterY,innerRadius,usageEndAngle,frameStartAngle,true);
+				ctx.arc(frameCenterX,frameCenterY,outerRadius,frameStartAngle,usageEndAngle,false);
+				ctx.closePath();
+				ctx.fill();
+			}
+
+			// draw ring ceil usage
+			var rate = tcObject.getRate();
+			if(frameCurrentRate>rate && tcObject.hasCeil()) {
+				var usageEndAngle = frameStartAngle + (frameEndAngle-frameStartAngle)*Math.min((frameCurrentRate-rate)/(tcObject.getCeil()-rate), 1);
+				ctx.fillStyle = tcObject.getInterface().getColor(2).toRgbaCss(frameOpacity);
+				ctx.beginPath();
+				ctx.arc(frameCenterX,frameCenterY,innerRadius,usageEndAngle,frameStartAngle,true);
+				ctx.arc(frameCenterX,frameCenterY,outerRadius,frameStartAngle,usageEndAngle,false);
+				ctx.closePath();
+				ctx.fill();
+			}
+		}
+	}
+	Ring.prototype = Object.create(RingPrototype);
+	Ring.prototype.constructor = Ring;
+
+	function TcObjectPrototype() {
+		var self = this;
+		var children = [];
+		
+		this.getChildren = function() {
+			return children;
+		}
+			
+		var insertChild = function(childClass, childType, childQdiscID, childClassID, childScheduler, index) {
+			var child = new childClass();
+			child.init1(self, childType, childQdiscID, childClassID, childScheduler);
+			if(index==-1) {
+				if(children.length==0) child.init2(null);
+				else child.init2(children[children.length-1]);
+				children.push(child);
+			} else {
+				if(index==0) child.init2(null);
+				else child.init2(children[index-1]);
+				children.splice(index, 0, child);
+			}
+			return child;
+		}
+		
+		this.getOrCreateChild = function(childClass, childType, childQdiscID, childClassID, childScheduler) {
+			for(var i=0; i<children.length; i++) {
+				var child = children[i];
+				if(child instanceof childClass && child.getType()==childType && child.getQdiscID()==childQdiscID && child.getClassID()==childClassID && child.getScheduler()==childScheduler) return child;
+				if(child.getQdiscID() > childQdiscID || (child.getQdiscID()==childQdiscID && child.getClassID()>childClassID)) {
+					return insertChild(childClass, childType, childQdiscID, childClassID, childScheduler, i);
+				}
+			}
+			return insertChild(childClass, childType, childQdiscID, childClassID, childScheduler, -1);
+		}
+
+		this.findChild = function(childQdiscID, childClassID) {
+			var result;
+			for(var i=0; i<children.length; i++) {
+				result = children[i].findChild(childQdiscID, childClassID);
+				if(result) return result;
+			}
+			return null;
+		}
+		
+		this.invalidate = function() {
+			for(var i=0; i<children.length; i++) {
+				children[i].invalidate();
+			}
+		}
+	}
+	
+	TcObjectPrototype.getClass = function(type, scheduler) {
+		if(type==1 && scheduler=="htb") {
+			return HtbObject;
+		} else {
+			return TcObject;
+		}
+	}
+
+	function DevObject(interfac) {
+		TcObjectPrototype.call(this);
+		var self = this;
+		var ring;
+
+		(function() {
+			ring = new Blackhole();
+			ring.initProto(self);
+		})();
+		
+		this.getRing = function() {
+			return ring;
+		}
+		
+		this.getCeil = function() {
+			return interfac.getThroughputRaw();
+		}
+		
+		this.getInterface = function() {
+			return interfac;
+		}
+		
+		var _findChild = this.findChild;
+		this.findChild = function(childQdiscID, childClassID) {
+			if(0==childQdiscID && 0==childClassID) return self;
+			return _findChild(childQdiscID, childClassID);
+		}
+	}
+	DevObject.prototype = Object.create(TcObjectPrototype);
+	DevObject.prototype.constructor = DevObject;
+
+
+	function TcObject() {
+		TcObjectPrototype.call(this);
+		var self = this;
+		var interfac, parent, type, qdiscID, classID, scheduler;
+		var ring;
+		var lastByteStats, currentRate, lastCurrentRate;
+		var invalid, lastUpdateTime, lastValueUpdateTime;
+
+		;(function() {
+			ring = new Ring();
+			byteStats = [];
+			lastByteStats = -1;
+			currentRate = lastCurrentRate = 0;
+			invalid = false;
+			lastUpdateTime = lastValueUpdateTime = performance.now();
+		})();
+		
+		this.init1 = function(iparent, itype, iqdiscID, iclassID, ischeduler) {
+			parent = iparent;
+			type = itype;
+			qdiscID = iqdiscID;
+			classID = iclassID;
+			scheduler = ischeduler;
+			interfac = iparent.getInterface();
+		}
+		
+		this.init2 = function(preTcObject) {
+			ring.init(self, preTcObject==null ? null : preTcObject.getRing());
+			self.setUpdated();
+		}
+		
+		this.getParent = function() {
+			return parent;
+		}
+		
+		this.getInterface = function() {
+			return interfac;
+		}
+		
+		this.getInterfaceRenderer = function() {
+			return interfac.getRenderer();
+		}
+		
+		this.getType = function() {
+			return type;
+		}
+		
+		this.getQdiscID = function() {
+			return qdiscID;
+		}
+		
+		this.getClassID = function() {
+			return classID;
+		}
+		
+		this.getScheduler = function() {
+			return scheduler;
+		}
+		
+		this.getRing = function() {
+			return ring;
+		}
+		
+		this.getRate = function() {
+			return parent.getCeil();
+		}
+		
+		this.getCeil = function() {
+			return self.getRate();
+		}
+
+		this.getSortingRate = function() {
+			return self.getCeil();
+		}
+		
+		this.hasCeil = function() {
+			return false;
+		}
+		
+		this.isInvalid = function() {
+			return invalid;
+		}
+		
+		this.getCurrentRate = function() {
+			return currentRate;
+		}
+		
+		this.getLastCurrentRate = function() {
+			return lastCurrentRate;
+		}
+		
+		this.getLastUpdateTime = function() {
+			return lastUpdateTime;
+		}
+		
+		this.getLastValueUpdateTime = function() {
+			return lastValueUpdateTime;
+		}
+		
+		var _invalidate = this.invalidate;
+		this.invalidate = function() {
+			invalid = true;
+			_invalidate();
+		}
+		
+		this.setUpdated = function(time) {
+			parent.getRing().setChildrenNeedUpdate();
+			lastUpdateTime = time;
+		}
+		
+		this.updateValues = function(time, newByteStats) {
+			lastCurrentRate = currentRate;
+			if(lastByteStats!=-1) {
+				currentRate = (newByteStats-lastByteStats)/(time-lastValueUpdateTime)*1000 + 10;
+			}
+			lastByteStats = newByteStats;
+			lastValueUpdateTime = time;
+			invalid = false;
+		}
+
+		var _findChild = this.findChild;
+		this.findChild = function(childQdiscID, childClassID) {
+			if(qdiscID==childQdiscID && classID==childClassID) return self;
+			return _findChild(childQdiscID, childClassID);
+		}
+	}
+	TcObject.prototype = Object.create(TcObjectPrototype);
+	TcObject.prototype.constructor = TcObject;
+
+
+	function HtbObject() {
+		TcObject.call(this);
+		var self = this;
+		var rate, ceil;
+		
+		this.getRate = function() {
+			return rate;
+		}
+		
+		this.getCeil = function() {
+			return ceil;
+		}
+		
+		this.hasCeil = function() {
+			return true;
+		}
+		
+		var _updateValues = this.updateValues;
+		this.updateValues = function(time, newByteStats, newRate, newCeil) {
+			_updateValues(time, newByteStats);
+			if(rate!=newRate || ceil!=newCeil) {
+				rate = newRate;
+				ceil = newCeil;
+				self.setUpdated(time);
+			}
+		}
+	}
+	HtbObject.prototype = Object.create(TcObject);
+	HtbObject.prototype.constructor = HtbObject;
+
+
+	function InterfaceRenderer(interfac) {
+		var particles, warningAnimTime;
+		
+		;(function() {
+			particles = [];
+			warningAnimTime = 0;
+		})();
+		
+		this.getParticles = function() {
+			return particles;
+		}
+		
+		var recurRing = function(tcObject, callback) {
+			var children = tcObject.getChildren();
+			for(var i=0; i<children.length; i++) {
+				if(callback(children[i].getRing())) {
+					children.splice(i--,1);
+				} else {
+					recurRing(children[i],callback);
+				}
+			}
+		}
+		
+		var prepareRings = function(time, timediff) {
+			recurRing(interfac.getDev(), function(ring) {
+				return ring.prepareFrame(time, timediff);
+			});
+		}
+		
+		var renderParticles = function(ctx, time, timediff) {
+			ctx.globalCompositeOperation = "lighter";
+			for(var i=0; i<particles.length; i++) {
+				if(particles[i].draw(ctx, time, timediff)) {
+					particles.splice(i--, 1);
+				}
+			}
+		}
+		
+		var renderRings = function(ctx, time, timediff) {
+			ctx.globalCompositeOperation = "source-over";
+			
+			// draw warnings
+			warningAnimTime+= timediff;
+			while(warningAnimTime > config.ring.warningAnimationInterval) warningAnimTime-= config.ring.warningAnimationInterval;
+			if(warningAnimTime < config.ring.warningAnimationDuration) {
+				ctx.strokeStyle=config.ring.warningColor.toRgbCss();
+				ctx.lineWidth = 5;
+				ctx.lineJoin = "round";
+				recurRing(interfac.getDev(), function(ring) {
+					ring.drawWarning(ctx);
+					return false;
+				});
+			}
+			
+			// draw rings
+			ctx.lineWidth = 1;
+			ctx.lineJoin = "miter";
+			recurRing(interfac.getDev(), function(ring) {
+				ring.drawRing(ctx);
+				return false;
+			});
+		}
+		
+		this.render = function(ctx, time, timediff) {
+			prepareRings(time, timediff);
+			renderParticles(ctx, time, timediff);
+			renderRings(ctx, time, timediff);
+		}
+		
+	}
+
+	function InterfaceSelector(list, interfac) {
+		var self = this;
+		var interfaceDiv, nameDiv, dummySpeedDiv, highlightDiv, dummyNameDiv, speedContainerDiv, speedDiv, speedHightlightDiv;
+		
+		;(function() {
+			interfaceDiv = $('<div class="ifselector">').css("z-index",20000-interfac.getIndex());
+			nameDiv = $('<div>').text(interfac.getName()).appendTo(interfaceDiv);
+			dummySpeedDiv = $('<div>').appendTo(interfaceDiv).text(interfac.getThroughput().toText);
+			highlightDiv = $('<div>').css("background-color",interfac.getColor(0).toRgbCss()).appendTo(interfaceDiv);
+			dummyNameDiv = $('<div>').text(interfac.getName()).appendTo(highlightDiv);
+			speedContainerDiv = $('<div>').appendTo(highlightDiv);
+			speedDiv = $('<div>').appendTo(speedContainerDiv).text(interfac.getThroughput().toText);
+			speedHightlightDiv = $('<div>').css("background-color",interfac.getColor(1).toRgbCss()).appendTo(speedContainerDiv);
+			list.add(interfaceDiv);
+		})();
+		
+		this.getOffset = function() {
+			return interfaceDiv.position().left+interfaceDiv.outerWidth(true)/2;
+		}
+		
+		this.setThroughput = function(throughputClass) {
+			var txt = throughputClass.toText();
+			dummySpeedDiv.text(txt);
+			speedDiv.text(txt);
+		}
+		
+		this.setInactive = function() {
+			highlightDiv.stop(true).animate({height:"0%"},{duration:config.selector.selectAnimationDuration,easing:config.selector.selectAnimationEasingFunction});
+			speedContainerDiv.unbind("mouseenter").unbind("mouseleave").unbind("click");
+		}
+		
+		this.setActive = function() {
+			var init = list.getCurrentSelector()==null;
+			if(init) {
+				interfaceDiv.css("visibility","visible").css("top",-interfaceDiv.height()).animate({top:"0px"},{duration:config.selector.selectAnimationDuration,easing:config.selector.selectAnimationEasingFunction});
+				highlightDiv.animate({height:"200%"},{duration:config.selector.selectAnimationDuration,easing:config.selector.selectAnimationEasingFunction});
+				interfaceDiv.mouseenter(enterActive);
+				list.initContainer(self.getOffset());
+			} else {
+				list.getCurrentSelector().setInactive();
+			}
+			speedContainerDiv.mouseenter(function() {
+				speedHightlightDiv.stop(true).animate({width:"100%"},{duration:config.selector.selectAnimationDuration,easing:config.selector.selectAnimationEasingFunction});
+			}).mouseleave(function() {
+				speedHightlightDiv.stop(true).animate({width:"0%"},{duration:config.selector.selectAnimationDuration,easing:config.selector.selectAnimationEasingFunction});
+			}).click(function() {
+				list.getThroughputChangeGui().initChange(interfac);
+			});
+		}
+		
+		var enterActive = function() {
+			interfaceDiv.unbind("mouseenter");
+			list.show();
+		}
+		
+		this.show = function() {
+			if(interfaceDiv.css("visibility")!="visible") {
+				interfaceDiv.css("visibility","visible").css("top",-list.getHeight());
+			}
+			interfaceDiv.stop(true).delay(config.selector.showAnimationDurationOffset*interfaceDiv.index()).animate({top:"0px"},{duration:config.selector.showAnimationDuration,easing:config.selector.showAnimationEasingFunction});
+			interfaceDiv.mouseenter(function() {
+				highlightDiv.stop(true).animate({height:"200%"},{duration:config.selector.selectAnimationDuration,easing:config.selector.selectAnimationEasingFunction});
+			}).mouseleave(function() {
+				highlightDiv.stop(true).animate({height:(interfac.isSelected() ? "100%" : "0%")},{duration:config.selector.selectAnimationDuration,easing:config.selector.selectAnimationEasingFunction});
+			}).click(function() {
+				interfac.select();
+			});
+		}
+		
+		this.removeActivationHooks = function() {
+			interfaceDiv.unbind("mouseenter").unbind("mouseleave").unbind("click");
+		}
+		
+		this.hide = function() {
+			var cnt = list.getCount();
+			if(interfac.isSelected()) {
+				highlightDiv.stop(true).animate({height:"200%"},{duration:config.selector.selectAnimationDuration,easing:config.selector.selectAnimationEasingFunction});
+				interfaceDiv.stop(true).delay(config.selector.showAnimationDurationOffset*cnt).animate({top:-interfaceDiv.position().top},{duration:config.selector.showAnimationDuration,easing:config.selector.showAnimationEasingFunction});
+				interfaceDiv.mouseenter(enterActive);
+			} else {
+				interfaceDiv.delay(config.selector.showAnimationDurationOffset*(cnt-interfac.getIndex())).animate({top:-list.getHeight()},{duration:config.selector.showAnimationDuration,easing:config.selector.showAnimationEasingFunction,complete:function() {
+					interfaceDiv.css("visibility","hidden");
+				}})
+			}
+		}
+	}
+
+	function Interface(list,index,name,link,throughput) {
+		var self = this;
+		var dev, renderer, selector, colors;
+		var lastUpdateTime;
+		
+		this.getIndex = function() {
+			return index;
+		}
+		
+		this.getName = function() {
+			return name;
+		}
+		
+		this.getLink = function() {
+			return link;
+		}
+		
+		this.getThroughput = function() {
+			return throughput;
+		}
+		
+		this.getThroughputRaw = function() {
+			return throughput.toBits();
+		}
+		
+		this.setThroughput = function(newThroughput) {
+			throughput = newThroughput;
+			dev.getRing().setChildrenNeedUpdate();
+			selector.setThroughput(newThroughput);
+		}
+		
+		this.getDev = function() {
+			return dev;
+		}
+		
+		this.getRenderer = function() {
+			return renderer;
+		}
+		
+		this.getSelector = function() {
+			return selector;
+		}
+		
+		this.getColor = function(colorType) {
+			return colors[colorType];
+		}
+		
+		this.isSelected = function() {
+			return list.getSelectedInterface()==self;
+		}
+		
+		this.select = function() {
+			selector.setActive();
+			list.setSelectedInterface(self);
+		}
+		
+		this.prepareUpdate = function() {
+			dev.invalidate();
+		}
+		
+		this.finishUpdate = function(time) {
+			dev.getRing().updateAllChildren();
+			lastUpdateTime = time;
+		}
+		
+		this.getLastUpdateTime = function() {
+			return lastUpdateTime;
+		}
+		
+		;(function() {
+			colors = list.getColorGenerator().generateScheme();
+			dev = new DevObject(self);
+			renderer = new InterfaceRenderer(self);
+			selector = new InterfaceSelector(list.getSelectorList(), self);
+			lastUpdateTime = -config.load.missingUpdateAnimationDelay;
+		})();
+		
+	}
+
+	function InterfaceSelectorList(interfaceList) {
+		var self = this;
+		var tpChangeGui, container, timeout;
+		
+		;(function() {
+			tpChangeGui = new ThroughputChangeGui();
+			container = $("div#ifarea").children();
+			timeout = null;
+		})();
+		
+		this.getThroughputChangeGui = function() {
+			return tpChangeGui;
+		}
+		
+		this.add = function(selectorDiv) {
+			container.append(selectorDiv);
+		}
+		
+		this.getHeight = function() {
+			return container.height();
+		}
+		
+		this.getCount = function() {
+			return interfaceList.getCount();
+		}
+		
+		this.getCurrentSelector = function() {
+			var intf = interfaceList.getSelectedInterface();
+			if(intf) return intf.getSelector();
+			else return null;
+		}
+		
+		this.initContainer = function(offset) {
+			container.css("left",(-offset)+"px");
+		}
+		
+		this.show = function() {
+			var interfaces = interfaceList.getInterfaces();
+			for(var i=0; i<interfaces.length; i++) {
+				interfaces[i].getSelector().show();
+			}
+			container.mouseleave(leave);
+		}
+		
+		var leave = function() {
+			if(timeout==null) {
+				container.unbind("mouseleave").mouseenter(enter);
+				timeout = setTimeout(hide, config.selector.hideDelay);
+			}
+		}
+			
+		var enter = function() {
+			if(timeout!=null) {
+				clearTimeout(timeout);
+				timeout = null;
+				container.unbind("mouseenter").mouseleave(leave);
+			}
+		}
+		
+		var hide = function() {
+			timeout = null;
+			container.unbind("mouseenter");
+			var interfaces = interfaceList.getInterfaces();
+			for(var i=0; i<interfaces.length; i++) {
+				interfaces[i].getSelector().removeActivationHooks();
+			}
+			container.animate({left:(-self.getCurrentSelector().getOffset())+"px"},{duration:config.selector.moveAnimationDuration,easing:config.selector.moveAnimationEasingFunction,complete:hideInterfaces});
+		}
+		
+		var hideInterfaces = function() {
+			var interfaces = interfaceList.getInterfaces();
+			for(var i=0; i<interfaces.length; i++) {
+				interfaces[i].getSelector().hide();
+			}
+		}
+
+	}
+
+	function ColorGenerator() {
+		var colorPrng, colorIndex, lastHue;
+		
+		;(function() {
+			colorPrng = new RNG(config.color.prngSeed);
+			colorIndex = 0;
+			lastHue = 0;
+		})();
+		
+		this.generateScheme = function() {
+			if(config.color.predefinedHues.length > colorIndex) {
+				lastHue = config.color.predefinedHues[colorIndex];
+			} else {
+				lastHue+= config.color.hueChangeMin + (config.color.hueChangeMax-config.color.hueChangeMin)*colorPrng.random();
+			}
+			colorIndex++;
+			var color = config.color.defaultParams.copy().addHue(lastHue);
+			return [color, color.copy().addColor(config.color.altOffsetParams), color.copy().addColor(config.color.ceilOffsetParams)];
+		}
+	}
+
+	function InterfaceList() {
+		var self = this;
+		var selectorList, interfaces, colorGen;
+		var selectedInterface;
+		
+		;(function() {
+			selectorList = new InterfaceSelectorList(self);
+			interfaces = [];
+			colorGen = new ColorGenerator();
+			selectedInterface = null;
+		})();
+		
+		this.getInterfaces = function() {
+			return interfaces;
+		}
+		
+		this.getSelectedInterface = function() {
+			return selectedInterface;
+		}
+		
+		this.setSelectedInterface = function(interfac) {
+			selectedInterface = interfac;
+		}
+		
+		this.getCount = function() {
+			return interfaces.length;
+		}
+		
+		this.getSelectorList = function() {
+			return selectorList;
+		}
+		
+		this.getColorGenerator = function() {
+			return colorGen;
+		}
+		
+		this.addInterface = function(name, link, throughputBits) {
+			var throughput = NetworkSpeed.bits(throughputBits);
+			var interfac = new Interface(self, interfaces.length, name, link, throughput);
+			interfaces.push(interfac);
+			if(interfaces.length==1) {
+				interfac.select();
+			}
+			return interfac;
+		}
+		
+		this.getInterface = function(name) {
+			for(var i=0; i<interfaces.length; i++) {
+				if(interfaces[i].getName()==name) {
+					return interfaces[i];
+				}
+			}
+			return null;
+		}
+	}
+
+	function DetailDisplay() {
+		var displayDiv;
+		var currentTcObject;
+	}
+
+	function GlobalRenderer(interfaceList) {
+		var self=this;
+		var viewport, canvas, ctx;
+		var loadAnimStartTime, lastRenderTime;
+		var lastTranslationX, lastTranslationY, currentTranslationX, currentTranslationY;
+		var lastScale, currentScale;
+		var lastMovePos, wasDragged, justClicked;
+		var W,H,mousePos;
+		
+		this.getCenterX = function() {
+			return W/2;
+		}
+		
+		this.getCenterY = function() {
+			return H/2;
+		}
+
+		this.getMousePos = function() {
+			return mousePos;
+		}
+
+		this.wasJustClicked = function() {
+			return justClicked;
+		}
+		
+		var interpolateLoadAnimation = function(time, index, num) {
+			var phaseLength = 150;
+			var iterationLength = phaseLength*(2+num);
+			var tdiff = time-loadAnimStartTime-phaseLength*index;
+			while(tdiff<0) tdiff+= iterationLength;
+			while(tdiff>iterationLength) tdiff-= iterationLength;
+			if(tdiff<phaseLength) {
+				return jQuery.easing[config.load.animationEasingFunction](null, tdiff, 0, 1, phaseLength);
+			} else if(tdiff<2*phaseLength) {
+				return 1;
+			} else if(tdiff<3*phaseLength) {
+				return 1-jQuery.easing[config.load.animationEasingFunction](null, tdiff-2*phaseLength, 0, 1, phaseLength);
+			} else {
+				return 0;
+			}
+		}
+
+		var draw = function(time) {
+			// time
+			var timediff = time-lastRenderTime;
+			lastRenderTime = time;
+
+			// reverse transforms
+			ctx.scale(1/lastScale,1/lastScale);
+			ctx.translate(-lastTranslationX,-lastTranslationY);
+			
+			// fade-away-overlay (dat rhyme)
+			ctx.globalCompositeOperation = "source-over";
+			ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
+			ctx.fillRect(0, 0, W, H);
+			
+			// transform
+			ctx.translate(currentTranslationX,currentTranslationY);
+			ctx.scale(currentScale,currentScale);
+			lastTranslationX = currentTranslationX;
+			lastTranslationY = currentTranslationY;
+			lastScale = currentScale;
+
+			// draw interface
+			var currentInterface = interfaceList.getSelectedInterface();
+			if(currentInterface) {
+				currentInterface.getRenderer().render(ctx, time,timediff);
+			}
+			
+			// draw load animation
+			if(currentInterface==null || (time-currentInterface.getLastUpdateTime() > config.load.missingUpdateAnimationDelay)) {
+				ctx.globalCompositeOperation = "source-over";
+				ctx.fillStyle = config.load.animationColor.toRgbCss();
+				var cnt = config.load.animationBarCount;
+				for(var i=0; i<cnt; i++) {
+					var im = i-(cnt-1)/2;
+					var progress = interpolateLoadAnimation(time, i, cnt)*(30-30*Math.abs(im)/cnt);
+					ctx.fillRect(W/2-5+im*15,H/2-20-progress,10,20+progress);
+				}
+			}
+			
+			justClicked = false;
+			window.requestAnimationFrame(draw);
+		}
+		
+		var getPos = function(event,obj) {
+			var x,y;
+			if (event.x != undefined && event.y != undefined)
+			{
+			  x = event.x;
+			  y = event.y;
+			}
+			else // Firefox method to get the position
+			{
+			  x = event.clientX;
+			  y = event.clientY;
+			}
+			x -= obj.offsetLeft;
+			y -= obj.offsetTop;
+			return {x:x,y:y};
+		}
+		
+		var dragBegin = function(event) {
+			if(event.which==1) {
+				lastMovePos = getPos(event,canvas[0]);
+				$(window).mousemove(dragDo).mouseup(dragEnd);
+				wasDragged = false;
+			}
+		}
+		
+		var dragDo = function(event) {
+			var pos = getPos(event,canvas[0]);
+			var dx = pos.x-lastMovePos.x;
+			var dy = pos.y-lastMovePos.y;
+			currentTranslationX+= dx;
+			currentTranslationY+= dy;
+			lastMovePos = pos;
+			wasDragged = true;
+		}
+		
+		var dragEnd = function() {
+			$(window).unbind("mousemove",dragDo).unbind("mouseup",dragEnd);
+			if(!wasDragged) {
+				justClicked = true;
+			}
+		}
+		
+		var zoom = function() {
+			var top = $(window).scrollTop();
+			var d = config.window.scrollMax-$(window).height();
+			var scale = jQuery.easing.easeInCirc(null, d-top, config.window.scaleMin, config.window.scaleMax, d);
+			currentTranslationX-= (scale-currentScale)*W/2;
+			currentTranslationY-= (scale-currentScale)*H/2;
+			currentScale = scale;
+		}
+
+		var updateMousePos = function(event) {
+			mousePos = getPos(event,canvas[0]);
+		}
+
+		var onViewportResize = function() {
+			W = viewport.width();
+			H = viewport.height();
+			canvas.attr("width",W).attr("height",H);
+			console.log("resized to "+W+" "+H)
+		}
+		
+		;(function() {
+			lastTranslationX = lastTranslationY = currentTranslationX = currentTranslationY = 0;
+			lastScale = currentScale = 1;
+			loadAnimStartTime = lastRenderTime = performance.now();
+			mousePos = {x:-1,y:-1};
+			
+			viewport = $("div#viewport");
+			canvas = $("canvas");
+			onViewportResize();
+			ctx = canvas[0].getContext("2d");
+			ctx.fillStyle = "rgb(0,0,0)";
+			ctx.fillRect(0, 0, W, H);
+			
+			currentScale = config.window.scaleDefault;
+			currentTranslationX = -(currentScale-1)*W/2;
+			currentTranslationY = -(currentScale-1)*H/2;
+
+			var d = config.window.scrollMax-$(window).height();
+			var scr = Math.sqrt((1-Math.pow(1-(1-config.window.scaleMin)/config.window.scaleMax,2))*d*d);
+			
+			window.requestAnimationFrame(draw);
+			canvas.mousedown(dragBegin).mousemove(updateMousePos);
+			$(window).scrollTop(d-scr).scroll(zoom).resize(onViewportResize);
+		})();
+	}
+
+	function ThroughputChangeGui() {
+		var tparea, tpvalue, tpunit, tphead, tptext;
+		var changingInterface, enabled, queued;
+
+		this.initChange = function(interfac) {
+			if(changingInterface==null) {
+				changingInterface = interfac;
+				display();
+			} else {
+				if(enabled) cancel();
+				changingInterface = interfac;
+				queued = true;
+			}
+		}
+		
+		var display = function() {
+			tparea.show().animate({opacity:1},{duration:config.tpupdate.opacityAnimationDuration,easing:config.tpupdate.opacityAnimationEasingFunction});
+			enabled = true;
+			var speed = changingInterface.getThroughput().getUnited();
+			tpvalue.val(speed[0]);
+			tpunit.val(speed[1]);
+			tphead.text("edit "+changingInterface.getName()+" maximum throughput").css("background-color",changingInterface.getColor(1).toRgbCss());
+			tptext.text("Please enter the maximum achievable throughput speed for "+changingInterface.getName()+":");
+			tparea.css("border-color",changingInterface.getColor(1).toRgbCss());
+			unitChanged();
+		}
+
+		var unitChanged = function() {
+			var unit = tpunit.val();
+			var maxRate = changingInterface.getLink();
+			tpvalue.attr({min:0,max:maxRate/unit});
+		}
+
+		var cancel = function() {
+			enabled = false;
+			tparea.stop(true).animate({opacity:0},{duration:config.tpupdate.opacityAnimationDuration,easing:config.tpupdate.opacityAnimationEasingFunction,complete:cancelComplete});
+		}
+		
+		var cancelComplete = function() {
+			if(queued) {
+				queued = false;
+				display();
+			} else {
+				changingInterface = null;
+				tparea.hide();
+			}
+		}
+
+		var update = function() {
+			if(enabled) {
+				var speed = NetworkSpeed.united(tpvalue.val(),tpunit.val());
+				changingInterface.setThroughput(speed);
+				jQuery.getJSON("warpgate.php?op=3&dev="+changingInterface.getName()+"&tp="+speed.toBits());
+				cancel();
+			}
+		}
+		
+		;(function() {
+			tparea = $("#throughputarea");
+			tpvalue = $("#tpvalue");
+			tpunit = $("#tpunit");
+			tphead = $("#tphead");
+			tptext = $("#tptext");
+			$("#tpform").submit(update);
+			$("#tpcancel").click(cancel);
+			tpunit.change(unitChanged);
+			changingInterface = null;
+			enabled = false;
+			queued = false;
+		})();
+		
+	}
+	
+	function DataAggregator(interfaceList) {
+	
+		var refreshData = function() {
+			var currentInterface = interfaceList.getSelectedInterface();
+			if(currentInterface) {
+				//jQuery.getJSON("warpgate.php?op=2&dev="+currentInterface.getName(),onDataReceive);
+				jQuery.getJSON(currentInterface.getName()+".json",onDataReceive);
+			}
+		}
+
+		var onDataReceive = function(data) {
+			var diParentQdiscID = 0;
+			var diParentClassID = 1;
+			var diType = 2;
+			var diScheduler = 3;
+			var diQdiscID = 4;
+			var diClassID = 5;
+			var diPacketStats = 6;
+			var diHTBRate = 7;
+			var diHTBCeil = 8;
+			
+			var dataInterface = interfaceList.getInterface(data.dev);
+			if(dataInterface==null) {
+				console.log("update failed: interface "+data.dev+" not found.");
+				return;
+			}
+			
+			dataInterface.prepareUpdate();
+			var time = performance.now();
+			var dev = dataInterface.getDev();
+			
+			for(var i=0; i<data.objects.length; i++) {
+				var childData = data.objects[i];
+				var parent = dev.findChild(childData[diParentQdiscID], childData[diParentClassID]);
+				if(parent==null) {
+					console.log("update partially failed: parent "+childData[diParentQdiscID]+":"+childData[diParentClassID]+" of "+childData[diQdiscID]+":"+childData[diClassID]+" not found");
+				} else {
+					var childClass = TcObjectPrototype.getClass(childData[diType],childData[diScheduler]);
+					var child = parent.getOrCreateChild(childClass, childData[diType], childData[diQdiscID], childData[diClassID], childData[diScheduler]);
+					if(childClass==HtbObject) {
+						child.updateValues(time, childData[diPacketStats]*8, childData[diHTBRate], childData[diHTBCeil]);
+					} else {
+						child.updateValues(time, childData[diPacketStats]*8);
+					}
+				}
+			}
+			
+			dataInterface.finishUpdate(time);
+		}
+
+		var loadInterfaces = function() {
+			//jQuery.getJSON("warpgate.php?op=1",onInterfacesReceive);
+			jQuery.getJSON("interfaces.json",onInterfacesReceive);
+		}
+
+		var onInterfacesReceive = function(data) {
+			for(var i=0; i<data.length; i++) {
+				var throughput = data[i].throughput ? data[i].throughput : data[i].link;
+				interfaceList.addInterface(data[i].name, data[i].link, throughput);
+			}
+			setInterval(refreshData, config.load.updateInterval);
+		}
+		
+		;(function() {
+			setTimeout(loadInterfaces, config.load.initDelay);
+		})();
+	}
+	
+	;(function() {
+		var interfaceList = new InterfaceList();
+		globalRenderer = new GlobalRenderer(interfaceList);
+		new DataAggregator(interfaceList);
+	})();
+
+}
+
+$(document).ready(Warpgate);

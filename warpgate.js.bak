@@ -1,0 +1,889 @@
+
+// === config ===
+
+var colorStatic = [0,1,0.86];								// first interface color in HSV [0..360,0..1,0..1]
+var colorsPredefined = [213,30,130,280,190,60,360];									// arbitrary number of predefined colors as hue [0..360]
+var colorPrngSeed = 65;										// color offset per interface in hue [0..360]
+var colorPrngChangeMin = 60;
+var colorPrngChangeMax = 140;
+var colorAltOffset = [0,0,-0.2];
+var colorCeilOffset = [0,-0.6,0.14];
+var dataUpdateInterval = 1;									// interval for fetching server data, in seconds
+var particleProgressDurationMin = 1.5;						// in seconds
+var particleProgressDurationMax = 2.3;						// in seconds
+var particleProgressEasingFunction = "linear"				// jQuery easing function
+var particleSizeStart = 4;									// in pixels
+var particleSizeEnd = 7;									// in pixels
+var particleLightStart = 1;									// in opacity (0..1)
+var particleLightEnd = 0.6;									// in opacity (0..1)
+var ringWidthMin = 11;										// width in pixels
+var ringWidthMax = 15;										// width in pixels
+var ringWidthStart = 15;									// root ring width in pixels
+var ringWidthChange = -1;									// width change in pixels/ring
+var ringRadiusStart = 100;									// radius in pixels
+var ringRadiusChange = 50;									// radius change in pixels/ring
+var ringParticleSpawnMax = 60;								// particle spawn limit in particles/second
+var ringUsageAnimationDuration = 0.8;						// in seconds. should not be larger than dataUpdateInterval 
+var ringUsageAnimationEasingFunction = "easeInOutCubic";	// jQuery easing function
+var ringAngleMin = 0.05;									// minimum angle of ring segment in part of full ring (0..1)
+var ringGapShare = 0.1;										// gap share of overall ring segment angle (0..1)
+var ringAnimationDuration = 1.5;							// in seconds
+var ringAnimationEasingFunction = "easeInOutCubic";			// jQuery easing function
+var ringWarningAnimationInterval = 2;
+var ringWarningAnimationDuration = 0.5;
+var scaleMin = 0.2;											// minimum scale (0..1..x)
+var scaleMax = 10;											// maximum scale (0..1..x)
+var scaleDefault = 1;										// default scale (0..1..x)
+var scrollMax = 3000;										// page length
+var loadAnimationEasingFunction  = "easeOutQuad";			// jQuery easing function
+var loadAnimationAfterTimeout = 3;
+var selectorSelectAnimationEasingFunction = "easeOutCubic";
+var selectorSelectAnimationDuration = 0.5;
+var selectorMoveAnimationEasingFunction = "easeOutExpo";
+var selectorMoveAnimationDuration = 0.8;
+var selectorShowAnimationEasingFunction = "easeOutCubic";
+var selectorShowAnimationDuration = 1;
+var selectorShowAnimationDurationOffset = 0.1;
+var selectorHideDelay = 2;
+
+
+// === system vars ===
+
+var W,H;
+var canvas,ctx;
+var lastTranslationX=0, lastTranslationY=0, currentTranslationX=0, currentTranslationY=0;
+var lastScale=1, currentScale=1;
+var lastMovePos, isDragging;
+var lastRenderTime;
+var colorPRNG, colorSchemeRGB;
+var interfaces = [];
+var interfaceList;
+var currentInterface = null, currentLoader = null;
+var loadAnimStartTime, warningAnimTime=0;
+var ifSelectorContainer, currentIfSelector = null;
+var ifSelectorTimeout = null;
+var enableRateUpdate = false;
+
+// === helper functions ===
+
+//+ Jonas Raoni Soares Silva
+//@ http://jsfromhell.com/array/shuffle [v1.0]
+function shuffle(o){ //v1.0
+    for(var j, x, i = o.length; i; j = Math.floor(Math.random() * i), x = o[--i], o[i] = o[j], o[j] = x);
+    return o;
+};
+
+function getPos(event,obj) {
+	var x,y;
+	if (event.x != undefined && event.y != undefined)
+	{
+	  x = event.x;
+	  y = event.y;
+	}
+	else // Firefox method to get the position
+	{
+	  x = event.clientX + document.body.scrollLeft +
+		  document.documentElement.scrollLeft;
+	  y = event.clientY + document.body.scrollTop +
+		  document.documentElement.scrollTop;
+	}
+	x -= obj.offsetLeft;
+	y -= obj.offsetTop;
+	return {x:x,y:y};
+}
+
+function hsv_to_rgb(hsv) {
+	var h = hsv[0];
+	var s = hsv[1];
+	var v = hsv[2];
+    var c = v * s;
+    var h1 = h / 60;
+    var x = c * (1 - Math.abs((h1 % 2) - 1));
+    var m = v - c;
+    var rgb;
+    
+    if (typeof h == 'undefined') rgb = [0, 0, 0];
+    else if (h1 < 1) rgb = [c, x, 0];
+    else if (h1 < 2) rgb = [x, c, 0];
+    else if (h1 < 3) rgb = [0, c, x];
+    else if (h1 < 4) rgb = [0, x, c];
+    else if (h1 < 5) rgb = [x, 0, c];
+    else if (h1 <= 6) rgb = [c, 0, x];
+    
+    return [(255 * (rgb[0] + m))>>0, (255 * (rgb[1] + m))>>0, (255 * (rgb[2] + m)>>0)];
+  } 
+
+function hsv_add_hue(hue1,hue,times) {
+	var result = hue1 + hue*times;
+	while(result<0) result+= 360;
+	while(result>360) result-= 360;
+	return result;
+}
+
+function hsv_add(hsv1,hsv2) {
+	return [hsv1[0]+hsv2[0],hsv1[1]+hsv2[1],hsv1[2]+hsv2[2]];
+}
+
+function drawTextAlongArc(str, centerX, centerY, radius, angle) {
+	var len = str.length, s;
+	ctx.save();
+	ctx.translate(centerX, centerY);
+	ctx.rotate((angle-1.5*Math.PI));
+	//ctx.rotate(-1 * (angle / len) / 2);
+	for(var n = 0; n < len; n++) {
+		ctx.rotate(0.012*Math.PI);
+		ctx.save();
+		ctx.translate(0, -1 * radius);
+		s = str[n];
+		ctx.fillText(s, 0, 0);
+		ctx.restore();
+	}
+	ctx.restore();
+}
+
+function tRateToHRate(rate) {
+	var unit = 1;
+	while(rate>=1000) {
+		rate/= 1000;
+		unit*= 1000;
+	}
+	rate = Math.round(rate*100)/100;
+	return [rate,unit];
+}
+
+function hRateToTRate(rate, unit) {
+	while(unit>1) {
+		unit/= 1000;
+		rate*= 1000;
+	}
+	return rate;
+}
+
+function tUnitToHUnit(unit) {
+	switch(unit) {
+	case 1: return "Bit/s";
+	case 1000: return "KBit/s";
+	case 1000000: return "MBit/s";
+	case 1000000000: return "GBit/s";
+	default: return "?/s";
+	}
+}
+
+
+// === classes ===
+
+function Particle(parentRing, startAngle, endAngle, outerRadius, innerRadius)
+{
+	var duration = (particleProgressDurationMin + (particleProgressDurationMax-particleProgressDurationMin)*Math.random())*1000;
+	var angle = startAngle + (endAngle-startAngle)*Math.random();
+	var xs = Math.cos(angle)*outerRadius + W/2;
+	var ys = Math.sin(angle)*outerRadius + H/2;
+	var xe = Math.cos(angle)*innerRadius + W/2;
+	var ye = Math.sin(angle)*innerRadius + H/2;
+	
+	var startTime = performance.now();
+	
+	this.draw = function(time,timediff) {
+		// progress update
+		var progress = jQuery.easing[particleProgressEasingFunction]((time-startTime)/duration, (time-startTime), 0, 1, duration);
+	
+		// params
+		var x = xs + (xe-xs)*progress;
+		var y = ys + (ye-ys)*progress;
+		var r = particleSizeStart + (particleSizeEnd-particleSizeStart)*progress;
+		var l = particleLightStart + (particleLightEnd-particleLightStart)*progress;
+		
+		// bounds check
+		if((x<xe && xs>xe) || (x>xe && xs<xe)) {
+			return true;
+		}
+	
+		// render style
+		var gradient = ctx.createRadialGradient(x, y, 0, x, y, r);
+		gradient.addColorStop(0, "rgba(255,255,255,"+l+")");
+		gradient.addColorStop(0.2, "rgba(255,255,255,"+l+")");
+		gradient.addColorStop(0.2, "rgba("+currentInterface.color[parentRing.getType()]+","+l+")");
+		gradient.addColorStop(1, "rgba(0,0,0,0)");
+		ctx.fillStyle = gradient;
+	
+		// render
+		ctx.beginPath();
+		ctx.arc(x, y, r, Math.PI*2, false);
+		ctx.fill();
+		
+		return false;
+	}
+
+}
+
+function Ring(type, qdiscID, classID, radius, width, parentOuterRadius, initAngle)
+{
+	var angle, startAngle=initAngle, endAngle=initAngle;
+	var lastAngle=0, lastStartAngle=initAngle, lastEndAngle=initAngle;
+	var animationState=0;
+	
+	var rate, ceil;
+	var currentRate=0, lastCurrentRate=0, rateAnimationState=0;
+	var spawnIterator = Math.random();
+
+	var updateFlag = false;
+	var self = this;
+	var children = [];
+	
+	var lastUpdateTime, lastValueUpdateTime;
+	
+	this.getType = function() {
+		return type;
+	}
+	
+	this.getRate = function() {
+		return rate;
+	}
+	
+	this.getQdiscID = function() {
+		return qdiscID;
+	}
+	
+	this.getClassID = function() {
+		return classID;
+	}
+	
+	this.getUpdateFlag = function() {
+		return updateFlag;
+	}
+	
+	var getAnimatedCurrentAngles = this.getAnimatedCurrentAngles = function() {
+		if(animationState==1) {
+			return {s: startAngle, e: endAngle};
+		} else {
+			return {s: lastStartAngle + (startAngle-lastStartAngle)*animationState,
+					e: lastEndAngle + (endAngle-lastEndAngle)*animationState };
+		}
+	}
+	
+	var getAnimatedCurrentRate = function() {
+		return lastCurrentRate + (currentRate-lastCurrentRate)*rateAnimationState;
+	}
+	
+	var updateValues = this.updateValues = function(newRate, newCeil, newCurrentRate) {
+		lastCurrentRate = getAnimatedCurrentRate();
+		if(lastCurrentRate!=0) {
+			if(lastCurrentRate>rate && ceil>rate && newCeil>newRate) {
+				lastCurrentRate = (lastCurrentRate-rate)/(ceil-rate)*(newCeil-newRate) + newRate;
+			} else {
+				lastCurrentRate*= newRate/rate;
+			}
+			// TODO ceil?!
+		}
+		rate = newRate;
+		ceil = newCeil;
+		currentRate = newCurrentRate;
+		rateAnimationState = 0;
+		lastValueUpdateTime = performance.now();
+		updateFlag = true;
+	}
+	
+	this.updateRing = function(context) {
+		if(!updateFlag) {
+			angle = 0;
+			updateValues(rate, ceil, 0);
+		} else {
+			var computedAngle = context.levelUsableAngle*rate/context.rateSum;
+			angle = /*Math.max(ringAngleMin,*/computedAngle/*)*/;
+			var angleOverusage = angle-computedAngle;
+			if(angle > context.levelUsableAngle) angleOverusage = context.levelUsableAngle;
+			context.levelUsableAngle-= angleOverusage;
+		}
+		updateFlag = false;
+	}
+	
+	this.updateLocation = function(context) {
+		var currentAngles = getAnimatedCurrentAngles();
+		var prevStartAngle = startAngle;
+		var prevEndAngle = endAngle;
+		startAngle = context.levelStartAngle;
+		startAngle+= context.gapAngle/2;
+		endAngle = startAngle+angle;
+		if(angle!=0) context.levelStartAngle = endAngle + context.gapAngle/2;
+		if(startAngle!=prevStartAngle || endAngle!=prevEndAngle) {
+			lastStartAngle = currentAngles.s;
+			lastEndAngle = currentAngles.e;
+			animationState = 0;
+			lastUpdateTime = performance.now();
+		}
+	}
+	
+	var insertChild = function(childType, childQdiscID, childClassID, index) {
+		var childInitAngle = startAngle;
+		if(index==-1 && children.length>0) {
+			childInitAngle = children[children.length-1].getAnimatedCurrentAngles().e;
+		} else if(index>0) {
+			childInitAngle = children[index-1].getAnimatedCurrentAngles().e;
+		}
+		var childWidth = Math.min(ringWidthMax, Math.max(ringWidthMin, width+ringWidthChange));
+		var child = new Ring(childType, childQdiscID, childClassID, radius+ringRadiusChange, childWidth, radius+width, childInitAngle);
+		if(index==-1) {
+			children.push(child);
+		} else {
+			children.splice(index, 0, child);
+		}
+		return child;
+	}
+	
+	this.getOrCreateChild = function(childType, childQdiscID, childClassID) {
+		for(var i=0; i<children.length; i++) {
+			var child = children[i];
+			if(child.getQdiscID()==childQdiscID && child.getClassID()==childClassID) return child;
+			if(child.getQdiscID() > childQdiscID || (child.getQdiscID()==childQdiscID && child.getClassID()>childClassID)) {
+				return insertChild(childType, childQdiscID, childClassID, i);
+			}
+		}
+		return insertChild(childType, childQdiscID, childClassID, -1);
+	}
+
+	var createChildUpdateContext = function() {
+		var childrenCount = children.length;
+		var childrenRateSum = 0;
+		for(var i=0; i<children.length; i++) {
+			if(children[i].getUpdateFlag()) {
+				childrenRateSum+= children[i].getRate();
+			} else {
+				childrenCount--;
+			}
+		}
+		var childrenGapAngle = childrenCount<=1 ? 0 : angle*ringGapShare;
+		var childrenUsableAngle = angle - childrenGapAngle;
+		var childGapAngle = childrenCount==0 ? 0 : childrenGapAngle/childrenCount;
+		return {cnt: childrenCount, rateSum: childrenRateSum, levelUsableAngle: childrenUsableAngle, gapAngle: childGapAngle, levelStartAngle: startAngle};
+	}
+	
+	var updateChildren = function(context) {
+		var sortedChildren = children.slice();
+		sortedChildren.sort(function(a,b) {
+			return a.getRate() - b.getRate();
+		});
+		
+		for(var i=0; i<children.length; i++) {
+			sortedChildren[i].updateRing(context);
+		}
+		
+		for(var i=0; i<children.length; i++) {
+			children[i].updateLocation(context);
+		}
+	}
+	
+	this.updateAllChildren = function() {
+		if(children.length > 0) {
+			var context = createChildUpdateContext();
+			updateChildren(context);
+			for(var i=0; i<children.length; i++) {
+				children[i].updateAllChildren();
+			}
+		}
+	}
+	
+	this.findChild = function(childQdiscID, childClassID) {
+		if(childQdiscID==qdiscID && childClassID==classID) return self;
+		var result;
+		for(var i=0; i<children.length; i++) {
+			result = children[i].findChild(childQdiscID, childClassID);
+			if(result) return result;
+		}
+		return null;
+	}
+	
+	this.draw = function(time, timediff)
+	{
+		var currentAngle, currentStartAngle, currentEndAngle;
+		
+		if(animationState!=1) {
+			animationState = Math.min(jQuery.easing[ringAnimationEasingFunction](null, time-lastUpdateTime, 0, 1, ringAnimationDuration*1000), 1);
+		}
+		var currentAngles = getAnimatedCurrentAngles();
+		var currentStartAngle = currentAngles.s;
+		var currentEndAngle = currentAngles.e;
+		var ccRate = getAnimatedCurrentRate();
+		
+		if(ccRate>0.95*ceil) {
+			if(warningAnimTime < ringWarningAnimationDuration*1000) {
+				ctx.strokeStyle="#FF0000";
+				ctx.lineWidth = 5;
+				ctx.lineJoin = "round";
+				ctx.beginPath();
+				var overAngle = 0.005*Math.PI*0;
+				ctx.arc(W/2,H/2,radius-1,currentEndAngle+overAngle,currentStartAngle-overAngle,true);
+				ctx.arc(W/2,H/2,radius+width+1,currentStartAngle-overAngle,currentEndAngle+overAngle,false);
+				ctx.closePath();
+				ctx.stroke();
+			}
+		}
+		
+		ctx.lineWidth = 1;
+		ctx.lineJoin = "miter";
+		ctx.fillStyle = "rgb(35,35,35)";
+		ctx.strokeStyle = "rgb("+currentInterface.color[type]+")";
+		ctx.beginPath();
+		ctx.arc(W/2,H/2,radius,currentEndAngle,currentStartAngle,true);
+		ctx.arc(W/2,H/2,radius+width,currentStartAngle,currentEndAngle,false);
+		ctx.closePath();
+		ctx.fill();
+		ctx.stroke();
+		
+		if(rateAnimationState!=1) {
+			rateAnimationState = Math.min(jQuery.easing[ringUsageAnimationEasingFunction](null, time-lastValueUpdateTime, 0, 1, ringUsageAnimationDuration*1000), 1);
+		}
+		
+		var spawnEnd = currentStartAngle + (currentEndAngle-currentStartAngle)*Math.min(ccRate/rate, 1);
+		ctx.fillStyle = "rgb("+currentInterface.color[type]+")";
+		ctx.beginPath();
+		ctx.arc(W/2,H/2,radius,spawnEnd,currentStartAngle,true);
+		ctx.arc(W/2,H/2,radius+width,currentStartAngle,spawnEnd,false);
+		ctx.closePath();
+		ctx.fill();
+		
+		if(ccRate>rate && ceil>rate) {
+			spawnEnd = currentStartAngle + (currentEndAngle-currentStartAngle)*Math.min((ccRate-rate)/(ceil-rate), 1);
+			ctx.fillStyle = "rgb("+currentInterface.color[2]+")";
+			ctx.beginPath();
+			ctx.arc(W/2,H/2,radius,spawnEnd,currentStartAngle,true);
+			ctx.arc(W/2,H/2,radius+width,currentStartAngle,spawnEnd,false);
+			ctx.closePath();
+			ctx.fill();
+			ctx.stroke();
+		}
+		
+		/*ctx.font = "12px sans-serif";
+		ctx.textBaseline = "bottom";
+		ctx.fillStyle = "#FFFFFF";
+		drawTextAlongArc(qdiscID+":"+classID, W/2, H/2, radius, currentStartAngle);*/
+		
+		spawnIterator+= (ringParticleSpawnMax*timediff/1000) * Math.min(currentRate/currentInterface.rate,1);
+		while(spawnIterator > 1) {
+			spawnIterator-= 1;
+			currentInterface.particles.push(new Particle(self, currentStartAngle,currentEndAngle,radius,parentOuterRadius));
+		}
+		
+		for(var i=0; i<children.length; i++) {
+			if(children[i].draw(time,timediff)) {
+				children.splice(i--, 1);
+			}
+		}
+		
+		if(animationState==1 && angle==0) {
+			return true;
+		} else {
+			return false;
+		}
+	}
+	
+}
+
+function Interface(index,name,link,rate)
+{
+	if(rate==0) {
+		rate = link;
+	}
+	var self = this;
+	var particles = [];
+	var rootRing = null;
+	var color = getColorScheme(index);
+	var selector = $('<div class="ifselector"><div>'+name+'</div><div></div></div>').css("z-index",20000-index).append($('<div><div>'+name+'</div><div><div></div><div style="background-color:rgb('+color[1]+')"></div></div></div>').css("background-color","rgb("+color[0]+")")).appendTo(ifSelectorContainer).data("ifname",name);
+	var lastUpdateTime = performance.now()-loadAnimationAfterTimeout*1000;
+	
+	this.name = name;
+	this.link = link;
+	this.rate = rate;
+	this.particles = particles;
+	this.color = color;
+	
+	this.getLastUpdateTime = function() {
+		return lastUpdateTime;
+	}
+	
+	this.setUpdated = function() {
+		lastUpdateTime = performance.now();
+	}
+	
+	this.getIndex = function() {
+		return index;
+	}
+	
+	this.setRate = function(newRate) {
+		rate = self.rate = newRate;
+		var hRate = tRateToHRate(rate);
+		var textRate = hRate[0]+' '+tUnitToHUnit(hRate[1]);
+		selector.children("div:nth-child(2)").text(textRate);
+		selector.children().last().children().last().children().first().text(textRate);
+	}
+	this.setRate(rate);
+	
+	this.getRootRing = function() {
+		if(rootRing==null) {
+			rootRing = new Ring(0, 1, 0, ringRadiusStart, ringWidthStart, 0, 1.5*Math.PI);
+			rootRing.updateValues(rate, rate, 0);
+			var context = {cnt: 1, rateSum: rate, levelUsableAngle: 2*Math.PI, gapAngle: 0, levelStartAngle: 1.5*Math.PI};
+			rootRing.updateRing(context);
+			rootRing.updateLocation(context);
+		}
+		return rootRing;
+	}
+	
+	this.switchTo = function() {
+		//console.log("triggered switchto");
+		if(currentInterface!=self) {
+			var first = currentIfSelector==null;
+			self.getRootRing();
+			if(first) {
+				selector.css("visibility","visible").css("top",-selector.height()).animate({top:"0px"},{duration:selectorSelectAnimationDuration*1000,easing:selectorSelectAnimationEasingFunction});
+				selector.children().last().stop(true).animate({height:"200%"},{duration:selectorSelectAnimationDuration*1000,easing:selectorSelectAnimationEasingFunction});
+				selector.mouseenter(showInterfaceList);
+				ifSelectorContainer.css("left",(-(selector.position().left+selector.outerWidth(true)/2))+"px");
+			} else {
+				currentIfSelector.children().last().stop(true).animate({height:"0%"},{duration:selectorSelectAnimationDuration*1000,easing:selectorSelectAnimationEasingFunction}).children().last().unbind("mouseenter").unbind("mouseleave").unbind("click");
+				cancelRateUpdate();
+			}
+			currentIfSelector = selector;
+			currentInterface = self;
+			selector.children().last().children().last().mouseenter(function() {
+				$(this).children().last().stop(true).animate({width:"100%"},{duration:selectorSelectAnimationDuration*1000,easing:selectorSelectAnimationEasingFunction});
+			}).mouseleave(function() {
+				$(this).children().last().stop(true).animate({width:"0%"},{duration:selectorSelectAnimationDuration*1000,easing:selectorSelectAnimationEasingFunction});
+			}).click(initRateUpdate);
+		}
+	}
+	
+	this.draw = function(time,timediff) {
+		ctx.globalCompositeOperation = "lighter";
+		for(var t = 0; t < particles.length; t++) {
+			if(particles[t].draw(time,timediff)) {
+				particles.splice(t,1);
+			}
+		}
+		
+		ctx.globalCompositeOperation = "source-over";
+		rootRing.draw(time,timediff);
+	}
+}
+
+Interface.create = function(name,link,rate) {
+	var index = interfaces.length;
+	var newInterface = new Interface(index,name,link,rate);
+	interfaces.push(newInterface);
+	return newInterface;
+}
+
+Interface.get = function(name) {
+	for(var i=0; i<interfaces.length; i++) {
+		if(interfaces[i].name==name) return interfaces[i];
+	}
+	return null;
+}
+
+function InterfaceList()
+{
+	this.draw = function(time,timediff) {
+		ctx.fillStyle = "#FFFFFF";
+		ctx.font = "2em Calibri";
+		ctx.textAlign = "center";
+		ctx.fillText("eth0",W/2,20);
+	}
+}
+
+
+// === event functions ===
+
+function bindSelectorAnimation(elem) {
+	elem.mouseenter(function() {
+		elem.children().last().stop(true).animate({height:"200%"},{duration:selectorSelectAnimationDuration*1000,easing:selectorSelectAnimationEasingFunction});
+	}).mouseleave(function() {
+		elem.children().last().stop(true).animate({height:(elem[0]==currentIfSelector[0] ? "100%" : "0%")},{duration:selectorSelectAnimationDuration*1000,easing:selectorSelectAnimationEasingFunction});
+	}).click(function() {
+		Interface.get(elem.data("ifname")).switchTo();
+	});
+}
+
+function showInterfaceList() {
+	//console.log("triggered show");
+	currentIfSelector.unbind("mouseenter");
+	ifSelectorContainer.mouseleave(leaveInterfaceList);
+	ifSelectorContainer.children().each(function(index) {
+		var elem = $(this);
+		if(elem.css("visibility")!="visible") {
+			elem.css("visibility","visible").css("top",-ifSelectorContainer.height());
+		}
+		elem.stop(true).delay(selectorShowAnimationDurationOffset*elem.index()*1000).animate({top:"0px"},{duration:selectorShowAnimationDuration*1000,easing:selectorShowAnimationEasingFunction});
+		bindSelectorAnimation(elem);
+	});
+}
+
+function leaveInterfaceList() {
+	//console.log("triggered leave");
+	if(ifSelectorTimeout==null) {
+		ifSelectorContainer.unbind("mouseleave").mouseenter(enterInterfaceList);
+		ifSelectorTimeout = setTimeout(hideInterfaceList, selectorHideDelay*1000);
+	}
+}
+
+function enterInterfaceList() {
+	//console.log("triggered enter");
+	if(ifSelectorTimeout!=null) {
+		clearTimeout(ifSelectorTimeout);
+		ifSelectorTimeout = null;
+		ifSelectorContainer.unbind("mouseenter").mouseleave(leaveInterfaceList);
+	}
+}
+
+function hideInterfaceList() {
+	//console.log("triggered hide");
+	ifSelectorTimeout = null;
+	ifSelectorContainer.unbind("mouseenter");
+	ifSelectorContainer.children().unbind("mouseenter").unbind("mouseleave").unbind("click")
+	ifSelectorContainer.animate({left:(-(currentIfSelector.position().left+currentIfSelector.outerWidth(true)/2))+"px"},{duration:selectorMoveAnimationDuration*1000,easing:selectorMoveAnimationEasingFunction,complete:function() {
+		var cnt = interfaces.length-1;
+		ifSelectorContainer.children().not(currentIfSelector).stop(true).each(function() {
+			$(this).delay(selectorShowAnimationDurationOffset*(cnt-$(this).index())*1000).animate({top:-ifSelectorContainer.height()},{duration:selectorShowAnimationDuration*1000,easing:selectorShowAnimationEasingFunction,complete:function() {
+				ifSelectorContainer.children().not(currentIfSelector).css("visibility","hidden");
+			}})
+		});
+		currentIfSelector.children().last().stop(true).animate({height:"200%"},{duration:selectorSelectAnimationDuration*1000,easing:selectorSelectAnimationEasingFunction});
+		currentIfSelector.stop(true).delay(selectorShowAnimationDurationOffset*cnt*1000).animate({top:-currentIfSelector.position().top},{duration:selectorShowAnimationDuration*1000,easing:selectorShowAnimationEasingFunction});
+		currentIfSelector.mouseenter(showInterfaceList);
+	}});
+}
+
+function initRateUpdate() {
+	$("#throughputarea").show().stop(true).animate({opacity:1},{duration:1000,easing:"easeOutCubic"});
+	enableRateUpdate = true;
+	var hRate = tRateToHRate(currentInterface.rate);
+	$("#tpvalue").val(hRate[0]);
+	$("#tpunit").val(hRate[1]);
+	$("#tphead").text("edit "+currentInterface.name+" maximum throughput").css("background-color","rgb("+currentInterface.color[1]+")");
+	$("#tptext").text("Please enter the maximum achievable throughput speed for "+currentInterface.name+":");
+	$("#throughputarea").css("border-color","rgb("+currentInterface.color[1]+")");
+	throughputUnitChanged();
+}
+
+function throughputUnitChanged() {
+	console.log("tuc!");
+	var unit = $("#tpunit").val();
+	var maxRate = currentInterface.link;
+	$("#tpvalue").attr({min:0,max:maxRate/unit});
+}
+
+function cancelRateUpdate() {
+	enableRateUpdate = false;
+	$("#throughputarea").stop(true).animate({opacity:0},{duration:1000,easing:"easeOutCubic",complete:function() {$(this).hide()}});
+}
+
+function updateRate() {
+	console.log("updating rate!");
+	var rate = hRateToTRate($("#tpvalue").val(),$("#tpunit").val());
+	currentInterface.setRate(rate);
+	cancelRateUpdate();
+}
+
+function dragDo(event) {
+	var pos = getPos(event,canvas[0]);
+	var dx = pos.x-lastMovePos.x;
+	var dy = pos.y-lastMovePos.y;
+	currentTranslationX+= dx;
+	currentTranslationY+= dy;
+	lastMovePos = pos;
+}
+
+function dragBegin(event) {
+	lastMovePos = getPos(event,canvas[0]);
+}
+
+function refreshData() {
+	jQuery.getJSON(currentInterface.name+".json",onDataReceive);
+}
+
+function onDataReceive(data) {
+	var diParentQdiscID = 0;
+	var diPartentClassID = 1;
+	var diType = 2;
+	var diScheduler = 3;
+	var diQdiscID = 4;
+	var diClassID = 5;
+	var diCurrentRate = 6;
+	var diChildrenCount = 7;
+	var diHTBRate = 8;
+	var diHTBCeil = 9;
+	
+	var dataInterface = Interface.get(data.dev);
+	if(dataInterface==null) {
+		console.log("update failed: interface "+data.dev+" not found.");
+		return;
+	}
+	
+	var rootRing = dataInterface.getRootRing();
+	rootRing.updateValues(dataInterface.rate, dataInterface.rate, data.objects[0][diCurrentRate]);
+	
+	for(var i=1; i<data.objects.length; i++) {
+		var childData = data.objects[i];
+		var parent = rootRing.findChild(childData[diParentQdiscID],childData[diPartentClassID]);
+		if(parent==null) {
+			console.log("update partially failed: parent "+childData[diParentQdiscID]+":"+childData[diPartentClassID]+" of "+childData[diQdiscID]+":"+childData[diClassID]+" not found");
+		} else {
+			var child = parent.getOrCreateChild(childData[diType],childData[diQdiscID],childData[diClassID]);
+			var rate = (childData[diType]==1 && childData[diScheduler]=="htb") ? childData[diHTBRate] : parent.getRate();
+			var ceil = (childData[diType]==1 && childData[diScheduler]=="htb") ? childData[diHTBCeil] : rate;
+			child.updateValues(rate, ceil, childData[diCurrentRate]);
+		}
+	}
+	
+	rootRing.updateAllChildren();
+	dataInterface.setUpdated();
+}
+
+function loadInterfaces() {
+	jQuery.getJSON("interfaces.json",onInterfacesReceive);
+}
+
+function onInterfacesReceive(data) {
+	for(var i=0; i<data.length; i++) {
+		var intf = Interface.create(data[i].dev, data[i].link, data[i].rate);
+		if(i==0) intf.switchTo();
+	}
+	setInterval(refreshData, dataUpdateInterval*1000);
+}
+
+// === main functions ===
+
+function getColorScheme(interfaceIndex) {
+	while(colorsPredefined.length <= interfaceIndex) {
+		colorsPredefined.push(hsv_add_hue(colorsPredefined[colorsPredefined.length-1], colorPrngChangeMin+(colorPrngChangeMax-colorPrngChangeMin)*colorPRNG.random(), 1));
+	}
+	//console.log(colorsPredefined[interfaceIndex]);
+	var color = [colorsPredefined[interfaceIndex],colorStatic[1],colorStatic[2]];
+	return [hsv_to_rgb(color).join(","), hsv_to_rgb(hsv_add(color,colorAltOffset)).join(","), hsv_to_rgb(hsv_add(color,colorCeilOffset)).join(",")];
+}
+
+function interpolateLoadAnimation(time, index, num) {
+	var phaseLength = 150;
+	var iterationLength = phaseLength*(2+num);
+	var tdiff = time-loadAnimStartTime-phaseLength*index;
+	while(tdiff<0) tdiff+= iterationLength;
+	while(tdiff>iterationLength) tdiff-= iterationLength;
+	if(tdiff<phaseLength) {
+		return jQuery.easing[loadAnimationEasingFunction](null, tdiff, 0, 1, phaseLength);
+	} else if(tdiff<2*phaseLength) {
+		return 1;
+	} else if(tdiff<3*phaseLength) {
+		return 1-jQuery.easing[loadAnimationEasingFunction](null, tdiff-2*phaseLength, 0, 1, phaseLength);
+	} else {
+		return 0;
+	}
+}
+
+function draw(time) {
+	// time
+	var timediff = time-lastRenderTime;
+	lastRenderTime = time;
+	warningAnimTime+= timediff;
+	while(warningAnimTime > ringWarningAnimationInterval*1000) warningAnimTime-= ringWarningAnimationInterval*1000;
+
+	// reverse transforms
+	ctx.scale(1/lastScale,1/lastScale);
+	ctx.translate(-lastTranslationX,-lastTranslationY);
+	
+	// overlay
+	ctx.globalCompositeOperation = "source-over";
+	ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
+	ctx.fillRect(0, 0, W, H);
+	
+	// interface selector
+	//interfaceList.draw(time,timediff);
+	
+	// transform
+	ctx.translate(currentTranslationX,currentTranslationY);
+	ctx.scale(currentScale,currentScale);
+	lastTranslationX = currentTranslationX;
+	lastTranslationY = currentTranslationY;
+	lastScale = currentScale;
+
+	// draw interface
+	if(currentInterface) {
+		currentInterface.draw(time,timediff);
+	}
+	
+	// draw load animation
+	if(currentInterface==null || time-currentInterface.getLastUpdateTime()>loadAnimationAfterTimeout*1000) {
+		ctx.globalCompositeOperation = "source-over";
+		ctx.fillStyle = "rgb(100,100,100)";
+		var cnt = 5;
+		for(var i=0; i<cnt; i++) {
+			var im = i-(cnt-1)/2;
+			var progress = interpolateLoadAnimation(time, i, cnt)*(30-30*Math.abs(im)/cnt);
+			ctx.fillRect(W/2-5+im*15,H/2-20-progress,10,20+progress);
+		}
+	}
+	
+	window.requestAnimationFrame(draw);
+}
+
+function init() {
+	// init vars
+	colorPRNG = new RNG(colorPrngSeed);
+	interfaceList = new InterfaceList();
+
+	// init objects
+	var viewport = $("div#viewport");
+	W = viewport.width();
+	H = viewport.height();
+	canvas = $("canvas");
+	canvas.attr("width",W);
+	canvas.attr("height",H);
+	ctx = canvas[0].getContext("2d");
+	var ifSelectorArea = ifselectors = $("div#ifarea");
+	ifSelectorContainer = ifSelectorArea.children("div");
+	
+	// init transforms
+	currentScale = scaleDefault;
+	currentTranslationX = -(currentScale-1)*W/2;
+	currentTranslationY = -(currentScale-1)*H/2;
+	
+	// clear canvas
+	ctx.fillStyle = "rgba(0, 0, 0, 1)";
+	ctx.fillRect(0, 0, W, H);
+	
+	// hooks
+	loadAnimStartTime = lastRenderTime = performance.now();
+	window.requestAnimationFrame(draw);
+	
+	canvas.mousedown(function(event) {
+		if(event.which==1) {
+			isDragging = false;
+			dragBegin(event);
+			$(window).mousemove(function(event) {
+				isDragging = true;
+				dragDo(event);
+			}).mouseup(function() {
+				var wasDragging = isDragging;
+				isDragging = false;
+				$(window).unbind("mousemove");
+				$(window).unbind("mouseup");
+				if (!wasDragging) { //was clicking
+					
+				}
+			});
+		}
+	});
+	
+	var d = scrollMax-$(window).height();
+	var scr = Math.sqrt((1-Math.pow(1-(1-scaleMin)/scaleMax,2))*d*d);
+	$(window).scrollTop(d-scr);
+	$(window).scroll(function() {
+		var top = $(window).scrollTop();
+		var d = scrollMax-$(window).height();
+		var scale = jQuery.easing.easeInCirc(null, d-top, scaleMin, scaleMax, d);
+		currentTranslationX-= (scale-currentScale)*W/2;
+		currentTranslationY-= (scale-currentScale)*H/2;
+		currentScale = scale;
+	});
+	
+	setTimeout(loadInterfaces,500);
+}
+$(document).ready(init);
+

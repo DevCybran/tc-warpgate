@@ -9,7 +9,7 @@ var config = {
 		ceilOffsetParams: Color.hsv(0,-0.6,0.14)
 	},
 	load: {
-		initDelay: 500,
+		initDelay: 200,
 		updateInterval: 1000,
 		animationEasingFunction : "easeOutQuad",			// jQuery easing function
 		animationColor: Color.hsv(0,0,0.2),
@@ -33,14 +33,13 @@ var config = {
 		widthChange: -2,									// width change in pixels/ring
 		radiusStart: 150,									// radius in pixels
 		radiusChange: 50,									// radius change in pixels/ring
-		particleSpawnMax: 6,								// particle spawn limit in particles/second
+		particleSpawnMax: 80,								// particle spawn limit in particles/second
 		usageAnimationDuration: 800,						// in seconds. should not be larger than dataUpdateInterval 
 		usageAnimationEasingFunction: "easeInOutCubic",	// jQuery easing function
-		//angleMin: 0.05,									// minimum angle of ring segment in part of full ring (0..1)
 		gapShare: 0.1,										// gap share of overall ring segment angle (0..1)
 		animationDuration: 1500,							// in seconds
 		animationEasingFunction: "easeInOutCubic",			// jQuery easing function
-		warningAnimationInterval: 2000,
+		warningAnimationInterval: 1000,
 		warningAnimationDuration: 500,
 		warningThreshold: 0.9,
 		warningColor: Color.hsv(0,1,0.8),

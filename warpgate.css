@@ -119,3 +119,53 @@ div#throughputarea>div:last-child {
 div#throughputarea>div:last-child div {
 	margin: 5px 0px;
 }
+
+div#detailbox {
+	padding: 10px;
+	background-color: rgba(0,0,0,0.6);
+	position: absolute;
+	display: none;
+	opacity: 1;
+	color: #FFFFFF;
+}
+
+div#detailbox>div:first-child {
+	display: block;
+	margin-bottom: 4px;
+	font-size: 1em;
+	font-weight: bold;
+	text-align: center;
+	padding: 1px 5px;
+}
+
+div#detailbox>div:last-child {
+	position: relative;
+	display: block;
+	text-align: left;
+	font-size: 0.8em;
+	padding: 3px 5px 5px 5px;
+}
+
+div.ratedivisor {
+	display: block;
+	width: 100%;
+	height: 10px;
+}
+
+div.ratedivisor>div {
+	display: block;
+	float: left;
+	height: 10px;
+}
+
+.invis {
+	visibility: hidden;
+	height: 0px;
+}
+
+table {
+	border: 0px;
+	margin: 0px;
+	padding: 0px;
+	white-space: nowrap;
+}

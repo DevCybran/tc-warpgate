@@ -100,15 +100,19 @@ Color.hsv = function(h,s,v) {
 
 function NetworkSpeed() {
 	var self=this;
-	var bitsps;
-	
-	this.setBits = function(bits) {
-		bitsps = bits;
+	var value;
+
+	this.getValue = function() {
+		return value;
+	}
+
+	this.setValue = function(val) {
+		value = val;
 		return self;
 	}
 
-	this.getUnited = function() {
-		var rate = bitsps;
+	this.getUnitValue = function() {
+		var rate = value;
 		var unit = 1;
 		while(rate>=1000) {
 			rate/= 1000;
@@ -118,42 +122,54 @@ function NetworkSpeed() {
 		return [rate,unit];
 	}
 	
-	this.setUnited = function(speed, unit) {
+	this.setUnitValue = function(val, unit) {
 		while(unit>1) {
 			unit/= 1000;
-			speed*= 1000;
+			val*= 1000;
 		}
-		bitsps = speed;
+		value = val;
 		return self;
 	}
-	
-	this.toText = function() {
-		var united = self.getUnited();
+
+	this.toUnitValue = function() {
+		return self.getUnitValue()[0];
+	}
+
+	this.toUnitText = function(rawUnit, factoredUnit) {
+		if(!rawUnit) rawUnit = "Bit/s";
+		if(!factoredUnit) factoredUnit = rawUnit;
+		var united = self.getUnitValue();
 		switch(united[1]) {
-		case 1: return united[0]+" Bit/s";
-		case 1000: return united[0]+" KBit/s";
-		case 1000000: return united[0]+" MBit/s";
-		case 1000000000: return united[0]+" GBit/s";
-		default: return united[0]+" ?/s";
+		case 1: return rawUnit;
+		case 1000: return "K"+factoredUnit;
+		case 1000000: return "M"+factoredUnit;
+		case 1000000000: return "G"+factoredUnit;
+		case 1000000000000: return "T"+factoredUnit;
+		default: return "?"+factoredUnit;
 		}
 	}
 	
-	this.toBits = function() {
-		return bitsps;
+	this.toText = function(rawUnit, factoredUnit) {
+		return self.toUnitValue() + " " + self.toUnitText(rawUnit, factoredUnit);
 	}
+
+	this.getMultiplied = function(factor) {
+		return NetworkSpeed.byValue(value*factor);
+	}
+	
 }
 
-NetworkSpeed.bits = function(bits) {
-	return (new NetworkSpeed()).setBits(bits);
+NetworkSpeed.byValue = function(bits) {
+	return (new NetworkSpeed()).setValue(bits);
 }
 
-NetworkSpeed.united = function(speed,unit) {
-	return (new NetworkSpeed()).setUnited(speed,unit);
+NetworkSpeed.byUnitValue = function(speed,unit) {
+	return (new NetworkSpeed()).setUnitValue(speed,unit);
 }
 
 
 function Warpgate() {
-	var globalRenderer;
+	var globalRenderer, detailDisplay;
 
 	function Particle(ring) {
 		var duration, angle, xs, ys, xe, ye, startTime;
@@ -494,7 +510,7 @@ function Warpgate() {
 			}
 			
 			if(!self.isHidden()) {
-				spawnIterator+= (config.ring.particleSpawnMax*Math.min(1000,timediff)/1000) * Math.min(tcObject.getCurrentRate()/tcObject.getInterface().getThroughputRaw(),1);
+				spawnIterator+= (config.ring.particleSpawnMax*Math.min(1000,timediff)/1000) * Math.min(tcObject.getCurrentRate()/tcObject.getInterface().getThroughputRaw(),1) * Math.max(1/20,(frameEndAngle-frameStartAngle)/(2*Math.PI));
 				while(spawnIterator > 1) {
 					spawnIterator-= 1;
 					tcObject.getInterfaceRenderer().getParticles().push(new Particle(self));
@@ -533,6 +549,7 @@ function Warpgate() {
 					if(self.isExpanded()) self.retract();
 					else self.expand();
 				}
+				detailDisplay.show(tcObject, pos);
 			} else {
 				ctx.strokeStyle = tcObject.getInterface().getColor(tcObject.getType()).toRgbaCss(frameOpacity);
 			}
@@ -660,13 +677,12 @@ function Warpgate() {
 		var self = this;
 		var interfac, parent, type, qdiscID, classID, scheduler;
 		var ring;
-		var lastByteStats, currentRate, lastCurrentRate;
+		var lastByteStats, lastPacketStats, currentRate, lastCurrentRate;
 		var invalid, lastUpdateTime, lastValueUpdateTime;
 
 		;(function() {
 			ring = new Ring();
-			byteStats = [];
-			lastByteStats = -1;
+			lastByteStats = lastPacketStats = -1;
 			currentRate = lastCurrentRate = 0;
 			invalid = false;
 			lastUpdateTime = lastValueUpdateTime = performance.now();
@@ -753,6 +769,14 @@ function Warpgate() {
 		this.getLastValueUpdateTime = function() {
 			return lastValueUpdateTime;
 		}
+
+		this.getByteStats = function() {
+			return lastByteStats;
+		}
+
+		this.getPacketStats = function() {
+			return lastPacketStats;
+		}
 		
 		var _invalidate = this.invalidate;
 		this.invalidate = function() {
@@ -765,12 +789,13 @@ function Warpgate() {
 			lastUpdateTime = time;
 		}
 		
-		this.updateValues = function(time, newByteStats) {
+		this.updateValues = function(time, newByteStats, newPacketStats) {
 			lastCurrentRate = currentRate;
 			if(lastByteStats!=-1) {
-				currentRate = (newByteStats-lastByteStats)/(time-lastValueUpdateTime)*1000 + 10;
+				currentRate = (newByteStats-lastByteStats)/(time-lastValueUpdateTime)*1000;
 			}
 			lastByteStats = newByteStats;
+			lastPacketStats = newPacketStats;
 			lastValueUpdateTime = time;
 			invalid = false;
 		}
@@ -799,12 +824,12 @@ function Warpgate() {
 		}
 		
 		this.hasCeil = function() {
-			return true;
+			return ceil>rate;
 		}
 		
 		var _updateValues = this.updateValues;
-		this.updateValues = function(time, newByteStats, newRate, newCeil) {
-			_updateValues(time, newByteStats);
+		this.updateValues = function(time, newByteStats, newPacketStats, newRate, newCeil) {
+			_updateValues(time, newByteStats, newPacketStats);
 			if(rate!=newRate || ceil!=newCeil) {
 				rate = newRate;
 				ceil = newCeil;
@@ -996,7 +1021,7 @@ function Warpgate() {
 		}
 		
 		this.getThroughputRaw = function() {
-			return throughput.toBits();
+			return throughput.getValue();
 		}
 		
 		this.setThroughput = function(newThroughput) {
@@ -1189,7 +1214,7 @@ function Warpgate() {
 		}
 		
 		this.addInterface = function(name, link, throughputBits) {
-			var throughput = NetworkSpeed.bits(throughputBits);
+			var throughput = NetworkSpeed.byValue(throughputBits);
 			var interfac = new Interface(self, interfaces.length, name, link, throughput);
 			interfaces.push(interfac);
 			if(interfaces.length==1) {
@@ -1209,8 +1234,70 @@ function Warpgate() {
 	}
 
 	function DetailDisplay() {
-		var displayDiv;
+		var self = this;
+		var displayDiv, head, body;
 		var currentTcObject;
+		var updated = 0;
+
+		;(function() {
+			displayDiv = $("div#detailbox");
+			head = displayDiv.children().first();
+			body = displayDiv.children().last();
+			currentTcObject = null;
+		})();
+
+		this.show = function(tcObject, pos) {
+			displayDiv.css({left:pos.x+16,top:pos.y+8});
+			updated = 2;
+			if(tcObject==currentTcObject) return;
+			currentTcObject = tcObject;
+			head.text((tcObject.getType()==1 ? "class " : "qdisc ")+tcObject.getScheduler()+" "+tcObject.getQdiscID()+":"+tcObject.getClassID());
+			self.update();
+			head.add(body).css("background-color",tcObject.getInterface().getColor(tcObject.getType()).toRgbCss());
+			displayDiv.show();
+		}
+
+		this.update = function() {
+			if(currentTcObject!=null) {
+				var speed = NetworkSpeed.byValue(currentTcObject.getCurrentRate());
+				var text = '<table>';
+				text+= '<tr><td>current throughput:</td><td><div class="invis">333.33 MBit/s+</div>'+speed.toText()+'</td>';
+				text+= '<td><div class="invis">(333.33 Byte/s+)</div>('+speed.getMultiplied(1/8).toText("Byte/s","B/s")+')</td></tr>';
+				var byteStats = NetworkSpeed.byValue(currentTcObject.getByteStats());
+				text+= '<tr><td>bytes sent:</td><td>'+byteStats.getValue()+' bytes</td><td>('+byteStats.toText("Bytes","B")+')</td></tr>';
+				var packetStats = NetworkSpeed.byValue(currentTcObject.getPacketStats());
+				text+= '<tr><td>packets sent:</td><td>'+packetStats.getValue()+' packets</td><td>('+packetStats.toText("packets"," packets")+')</td></tr>';
+				text+= '</table>';
+				if(currentTcObject instanceof HtbObject) {
+					text+= '<table><tr><td>rate: '+NetworkSpeed.byValue(currentTcObject.getRate()).toText()+'</td>';
+					text+= '<td><div class="invis">(100%)</div>('+((Math.min(1,currentTcObject.getCurrentRate()/currentTcObject.getRate())*100)<<0)+'%)</td>';
+					text+= '<td width="100%">&nbsp;</td>';
+					text+= '<td align="right"><div class="invis">(100%)</div>('+((Math.min(1,currentTcObject.getCurrentRate()/currentTcObject.getCeil())*100)<<0)+'%)</td>';
+					text+= '<td>'+NetworkSpeed.byValue(currentTcObject.getCeil()).toText()+' :ceil</td>';
+					text+= '</table>';
+				}
+				body.html(text);
+				if(currentTcObject instanceof HtbObject) {
+					var perc = (currentTcObject.getRate()/currentTcObject.getCeil()*100) << 0;
+					$('<div class="ratedivisor">').append(
+						$('<div>').css("background-color",currentTcObject.getInterface().getColor(1-currentTcObject.getType()).toRgbCss()).css("width",perc+"%")
+					).append(
+						$('<div>').css("background-color",currentTcObject.getInterface().getColor(2).toRgbCss()).css("width",(100-perc)+"%")
+					).appendTo(body);
+				}
+			}
+		}
+
+		this.fin = function() {
+			if(updated==1) {
+				displayDiv.hide();
+				currentTcObject = null;
+				updated = 0;
+			} else if(updated==2) {
+				updated = 1;
+			}
+		}
+
 	}
 
 	function GlobalRenderer(interfaceList) {
@@ -1294,6 +1381,7 @@ function Warpgate() {
 				}
 			}
 			
+			detailDisplay.fin();
 			justClicked = false;
 			window.requestAnimationFrame(draw);
 		}
@@ -1357,7 +1445,6 @@ function Warpgate() {
 			W = viewport.width();
 			H = viewport.height();
 			canvas.attr("width",W).attr("height",H);
-			console.log("resized to "+W+" "+H)
 		}
 		
 		;(function() {
@@ -1404,7 +1491,7 @@ function Warpgate() {
 		var display = function() {
 			tparea.show().animate({opacity:1},{duration:config.tpupdate.opacityAnimationDuration,easing:config.tpupdate.opacityAnimationEasingFunction});
 			enabled = true;
-			var speed = changingInterface.getThroughput().getUnited();
+			var speed = changingInterface.getThroughput().getUnitValue();
 			tpvalue.val(speed[0]);
 			tpunit.val(speed[1]);
 			tphead.text("edit "+changingInterface.getName()+" maximum throughput").css("background-color",changingInterface.getColor(1).toRgbCss());
@@ -1436,9 +1523,9 @@ function Warpgate() {
 
 		var update = function() {
 			if(enabled) {
-				var speed = NetworkSpeed.united(tpvalue.val(),tpunit.val());
+				var speed = NetworkSpeed.byUnitValue(tpvalue.val(),tpunit.val());
 				changingInterface.setThroughput(speed);
-				jQuery.getJSON("warpgate.php?op=3&dev="+changingInterface.getName()+"&tp="+speed.toBits());
+				jQuery.getJSON("warpgate.php?op=3&dev="+changingInterface.getName()+"&tp="+speed.getValue());
 				cancel();
 			}
 		}
@@ -1464,8 +1551,8 @@ function Warpgate() {
 		var refreshData = function() {
 			var currentInterface = interfaceList.getSelectedInterface();
 			if(currentInterface) {
-				//jQuery.getJSON("warpgate.php?op=2&dev="+currentInterface.getName(),onDataReceive);
-				jQuery.getJSON(currentInterface.getName()+".json",onDataReceive);
+				jQuery.getJSON("warpgate.php?op=2&dev="+currentInterface.getName(),onDataReceive);
+				//jQuery.getJSON(currentInterface.getName()+".json",onDataReceive);
 			}
 		}
 
@@ -1476,13 +1563,14 @@ function Warpgate() {
 			var diScheduler = 3;
 			var diQdiscID = 4;
 			var diClassID = 5;
-			var diPacketStats = 6;
-			var diHTBRate = 7;
-			var diHTBCeil = 8;
+			var diByteStats = 6;
+			var diPacketStats = 7;
+			var diHTBRate = 8;
+			var diHTBCeil = 9;
 			
 			var dataInterface = interfaceList.getInterface(data.dev);
 			if(dataInterface==null) {
-				console.log("update failed: interface "+data.dev+" not found.");
+				//console.log("update failed: interface "+data.dev+" not found.");
 				return;
 			}
 			
@@ -1494,24 +1582,25 @@ function Warpgate() {
 				var childData = data.objects[i];
 				var parent = dev.findChild(childData[diParentQdiscID], childData[diParentClassID]);
 				if(parent==null) {
-					console.log("update partially failed: parent "+childData[diParentQdiscID]+":"+childData[diParentClassID]+" of "+childData[diQdiscID]+":"+childData[diClassID]+" not found");
+					//console.log("update partially failed: parent "+childData[diParentQdiscID]+":"+childData[diParentClassID]+" of "+childData[diQdiscID]+":"+childData[diClassID]+" not found");
 				} else {
 					var childClass = TcObjectPrototype.getClass(childData[diType],childData[diScheduler]);
 					var child = parent.getOrCreateChild(childClass, childData[diType], childData[diQdiscID], childData[diClassID], childData[diScheduler]);
 					if(childClass==HtbObject) {
-						child.updateValues(time, childData[diPacketStats]*8, childData[diHTBRate], childData[diHTBCeil]);
+						child.updateValues(time, childData[diByteStats]*8, childData[diPacketStats], childData[diHTBRate], childData[diHTBCeil]);
 					} else {
-						child.updateValues(time, childData[diPacketStats]*8);
+						child.updateValues(time, childData[diByteStats]*8, childData[diPacketStats]);
 					}
 				}
 			}
 			
 			dataInterface.finishUpdate(time);
+			detailDisplay.update();
 		}
 
 		var loadInterfaces = function() {
-			//jQuery.getJSON("warpgate.php?op=1",onInterfacesReceive);
-			jQuery.getJSON("interfaces.json",onInterfacesReceive);
+			jQuery.getJSON("warpgate.php?op=1",onInterfacesReceive);
+			//jQuery.getJSON("interfaces.json",onInterfacesReceive);
 		}
 
 		var onInterfacesReceive = function(data) {
@@ -1530,6 +1619,7 @@ function Warpgate() {
 	;(function() {
 		var interfaceList = new InterfaceList();
 		globalRenderer = new GlobalRenderer(interfaceList);
+		detailDisplay = new DetailDisplay();
 		new DataAggregator(interfaceList);
 	})();
 

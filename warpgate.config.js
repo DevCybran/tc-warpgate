@@ -63,7 +63,7 @@ var config = {
 		showAnimationDurationOffset: 100,
 		hideDelay: 2000
 	},
-	tpupdate: {
+	editor: {
 		opacityAnimationDuration: 800,
 		opacityAnimationEasingFunction: "easeOutCubic"
 	}

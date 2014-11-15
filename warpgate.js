@@ -1,20 +1,8 @@
 
-/*function drawTextAlongArc(str, centerX, centerY, radius, angle) {
-	var len = str.length, s;
-	ctx.save();
-	ctx.translate(centerX, centerY);
-	ctx.rotate((angle-1.5*Math.PI));
-	//ctx.rotate(-1 * (angle / len) / 2);
-	for(var n = 0; n < len; n++) {
-		ctx.rotate(0.012*Math.PI);
-		ctx.save();
-		ctx.translate(0, -1 * radius);
-		s = str[n];
-		ctx.fillText(s, 0, 0);
-		ctx.restore();
-	}
-	ctx.restore();
-}*/
+String.prototype.nl2br = function()
+{
+    return this.replace(/\n/g, "<br />");
+}
 
 function Color() {
 	var self = this;
@@ -169,7 +157,7 @@ NetworkSpeed.byUnitValue = function(speed,unit) {
 
 
 function Warpgate() {
-	var globalRenderer, detailDisplay;
+	var globalRenderer, detailDisplay, commentEditor;
 
 	function Particle(ring) {
 		var duration, angle, xs, ys, xe, ye, startTime;
@@ -550,6 +538,9 @@ function Warpgate() {
 					else self.expand();
 				}
 				detailDisplay.show(tcObject, pos);
+				if(globalRenderer.wasJustDoubleClicked()) {
+					tcObject.changeComment();
+				}
 			} else {
 				ctx.strokeStyle = tcObject.getInterface().getColor(tcObject.getType()).toRgbaCss(frameOpacity);
 			}
@@ -709,6 +700,14 @@ function Warpgate() {
 		this.getInterface = function() {
 			return interfac;
 		}
+
+		this.getComment = function() {
+			return interfac.getComment(qdiscID,classID);
+		}
+
+		this.getDescriptor = function() {
+			return (type==1 ? "class " : "qdisc ")+scheduler+" "+qdiscID+":"+classID;
+		}
 		
 		this.getInterfaceRenderer = function() {
 			return interfac.getRenderer();
@@ -776,6 +775,14 @@ function Warpgate() {
 
 		this.getPacketStats = function() {
 			return lastPacketStats;
+		}
+
+		this.changeComment = function() {
+			commentEditor.initChange(self);
+		}
+
+		this.setComment = function(head,body) {
+			interfac.setComment(qdiscID,classID,head,body);
 		}
 		
 		var _invalidate = this.invalidate;
@@ -999,7 +1006,7 @@ function Warpgate() {
 		}
 	}
 
-	function Interface(list,index,name,link,throughput) {
+	function Interface(list,index,name,link,throughput,comments) {
 		var self = this;
 		var dev, renderer, selector, colors;
 		var lastUpdateTime;
@@ -1023,11 +1030,22 @@ function Warpgate() {
 		this.getThroughputRaw = function() {
 			return throughput.getValue();
 		}
+
+		this.getComment = function(qdiscID, classID) {
+			return comments[qdiscID+":"+classID];
+		}
+
+		this.setComment = function(qdiscID, classID, head, body) {
+			var objID = qdiscID+":"+classID;
+			comments[objID] = [head, body];
+			jQuery.post("warpgate.php?op=4&dev="+name+"&obj="+objID, {head:head,body:body});
+		}
 		
 		this.setThroughput = function(newThroughput) {
 			throughput = newThroughput;
 			dev.getRing().setChildrenNeedUpdate();
 			selector.setThroughput(newThroughput);
+			jQuery.getJSON("warpgate.php?op=3&dev="+name+"&tp="+newThroughput.getValue());
 		}
 		
 		this.getDev = function() {
@@ -1051,8 +1069,10 @@ function Warpgate() {
 		}
 		
 		this.select = function() {
-			selector.setActive();
-			list.setSelectedInterface(self);
+			if(!self.isSelected()) {
+				selector.setActive();
+				list.setSelectedInterface(self);
+			}
 		}
 		
 		this.prepareUpdate = function() {
@@ -1213,9 +1233,9 @@ function Warpgate() {
 			return colorGen;
 		}
 		
-		this.addInterface = function(name, link, throughputBits) {
+		this.addInterface = function(name, link, throughputBits, comments) {
 			var throughput = NetworkSpeed.byValue(throughputBits);
-			var interfac = new Interface(self, interfaces.length, name, link, throughput);
+			var interfac = new Interface(self, interfaces.length, name, link, throughput, comments);
 			interfaces.push(interfac);
 			if(interfaces.length==1) {
 				interfac.select();
@@ -1236,7 +1256,10 @@ function Warpgate() {
 	function DetailDisplay() {
 		var self = this;
 		var displayDiv, head, body;
-		var currentTcObject;
+		var commentDiv;
+		var normalTable, ctBitDiv, ctByteDiv, byteStatDiv, byteStatUnitDiv, packetStatDiv, packetStatUnitDiv;
+		var htbTable, rateDiv, ceilDiv, ratePercDiv, ceilPercDiv, htbDivisorDiv, rateDivisorDiv, ceilDivisorDiv;
+		var currentTcObject, currentComment;
 		var updated = 0;
 
 		;(function() {
@@ -1244,47 +1267,99 @@ function Warpgate() {
 			head = displayDiv.children().first();
 			body = displayDiv.children().last();
 			currentTcObject = null;
+
+			commentDiv = $('<div>').css("margin","5px");
+
+			normalTable = $('<table><tr><td>current throughput:</td><td><div class="invis">333.33 MBit/s+</div></td><td><div class="invis">(333.33 Byte/s+)</div></td></tr>'+
+				'<tr><td>bytes sent:</td><td></td><td></td></tr><tr><td>packets sent:</td><td></td><td></td></tr></table>');
+			ctBitDiv = $('<div>').appendTo(normalTable.find('tr:first-child').children('td:nth-child(2)'));
+			ctByteDiv = $('<div>').appendTo(normalTable.find('tr:first-child').children('td:last-child'));
+			byteStatDiv = $('<div>').appendTo(normalTable.find('tr:nth-child(2)').children('td:nth-child(2)'));
+			byteStatUnitDiv = $('<div>').appendTo(normalTable.find('tr:nth-child(2)').children('td:last-child'));
+			packetStatDiv = $('<div>').appendTo(normalTable.find('tr:nth-child(3)').children('td:nth-child(2)'));
+			packetStatUnitDiv = $('<div>').appendTo(normalTable.find('tr:nth-child(3)').children('td:last-child'));
+
+			htbTable = $('<table><tr><td></td><td><div class="invis">(100%)</div></td><td width="100%">&nbsp;</td><td align="right"><div class="invis">(100%)</div></td><td></td></table>');
+			rateDiv = $('<div>').appendTo(htbTable.find('tr').children('td:first-child'));
+			ratePercDiv = $('<div>').appendTo(htbTable.find('tr').children('td:nth-child(2)'));
+			ceilPercDiv = $('<div>').appendTo(htbTable.find('tr').children('td:nth-child(4)'));
+			ceilDiv = $('<div>').appendTo(htbTable.find('tr').children('td:nth-child(5)'));
+
+			htbDivisorDiv = $('<div class="ratedivisor">');
+			rateDivisorDiv = $('<div>').appendTo(htbDivisorDiv);
+			ceilDivisorDiv = $('<div>').appendTo(htbDivisorDiv);
 		})();
+
+		var updateHead = function() {
+			var text = currentTcObject.getDescriptor();
+			if(currentComment && currentComment[0]!="") text+= " ("+currentComment[0]+")";
+			head.text(text);
+		}
+
+		var updateBody = function() {
+			var speed = NetworkSpeed.byValue(currentTcObject.getCurrentRate());
+			var byteStats = NetworkSpeed.byValue(currentTcObject.getByteStats());
+			var packetStats = NetworkSpeed.byValue(currentTcObject.getPacketStats());
+
+			if(currentComment) {
+				commentDiv.text(currentComment[1]);
+				commentDiv.html(commentDiv.html().split("\n").join("<br/>"));
+			}
+
+			ctBitDiv.text(speed.toText());
+			ctByteDiv.text('('+speed.getMultiplied(1/8).toText("Byte/s","B/s")+')');
+			byteStatDiv.text(byteStats.getValue()+' bytes');
+			byteStatUnitDiv.text('('+byteStats.toText("Bytes","B")+')');
+			packetStatDiv.text(packetStats.getValue()+' packets');
+			packetStatUnitDiv.text('('+packetStats.toText("packets"," packets")+')');
+
+			if(currentTcObject instanceof HtbObject) {
+				rateDiv.text('rate: '+NetworkSpeed.byValue(currentTcObject.getRate()).toText());
+				ceilDiv.text(NetworkSpeed.byValue(currentTcObject.getCeil()).toText()+' :ceil');
+				ratePercDiv.text('('+((Math.min(1,currentTcObject.getCurrentRate()/currentTcObject.getRate())*100)<<0)+'%)');
+				ceilPercDiv.text('('+((Math.min(1,currentTcObject.getCurrentRate()/currentTcObject.getCeil())*100)<<0)+'%)');
+				
+				var perc = (currentTcObject.getRate()/currentTcObject.getCeil()*100) << 0;
+				rateDivisorDiv.css("width",perc+"%");
+				ceilDivisorDiv.css("width",(100-perc)+"%");
+			}
+		}
 
 		this.show = function(tcObject, pos) {
 			displayDiv.css({left:pos.x+16,top:pos.y+8});
 			updated = 2;
 			if(tcObject==currentTcObject) return;
 			currentTcObject = tcObject;
-			head.text((tcObject.getType()==1 ? "class " : "qdisc ")+tcObject.getScheduler()+" "+tcObject.getQdiscID()+":"+tcObject.getClassID());
-			self.update();
+			currentComment = tcObject.getComment();
+
+			body.empty();
+
 			head.add(body).css("background-color",tcObject.getInterface().getColor(tcObject.getType()).toRgbCss());
+			if(currentTcObject instanceof HtbObject) {
+				rateDivisorDiv.css("background-color",currentTcObject.getInterface().getColor(1-currentTcObject.getType()).toRgbCss());
+				ceilDivisorDiv.css("background-color",currentTcObject.getInterface().getColor(2).toRgbCss());
+			}
+			updateHead();
+			updateBody();
+
+			if(currentComment && currentComment[1]!="") body.append(commentDiv);
+			body.append(normalTable);
+			if(currentTcObject instanceof HtbObject) body.append(htbTable, htbDivisorDiv);
 			displayDiv.show();
 		}
 
 		this.update = function() {
 			if(currentTcObject!=null) {
-				var speed = NetworkSpeed.byValue(currentTcObject.getCurrentRate());
-				var text = '<table>';
-				text+= '<tr><td>current throughput:</td><td><div class="invis">333.33 MBit/s+</div>'+speed.toText()+'</td>';
-				text+= '<td><div class="invis">(333.33 Byte/s+)</div>('+speed.getMultiplied(1/8).toText("Byte/s","B/s")+')</td></tr>';
-				var byteStats = NetworkSpeed.byValue(currentTcObject.getByteStats());
-				text+= '<tr><td>bytes sent:</td><td>'+byteStats.getValue()+' bytes</td><td>('+byteStats.toText("Bytes","B")+')</td></tr>';
-				var packetStats = NetworkSpeed.byValue(currentTcObject.getPacketStats());
-				text+= '<tr><td>packets sent:</td><td>'+packetStats.getValue()+' packets</td><td>('+packetStats.toText("packets"," packets")+')</td></tr>';
-				text+= '</table>';
-				if(currentTcObject instanceof HtbObject) {
-					text+= '<table><tr><td>rate: '+NetworkSpeed.byValue(currentTcObject.getRate()).toText()+'</td>';
-					text+= '<td><div class="invis">(100%)</div>('+((Math.min(1,currentTcObject.getCurrentRate()/currentTcObject.getRate())*100)<<0)+'%)</td>';
-					text+= '<td width="100%">&nbsp;</td>';
-					text+= '<td align="right"><div class="invis">(100%)</div>('+((Math.min(1,currentTcObject.getCurrentRate()/currentTcObject.getCeil())*100)<<0)+'%)</td>';
-					text+= '<td>'+NetworkSpeed.byValue(currentTcObject.getCeil()).toText()+' :ceil</td>';
-					text+= '</table>';
-				}
-				body.html(text);
-				if(currentTcObject instanceof HtbObject) {
-					var perc = (currentTcObject.getRate()/currentTcObject.getCeil()*100) << 0;
-					$('<div class="ratedivisor">').append(
-						$('<div>').css("background-color",currentTcObject.getInterface().getColor(1-currentTcObject.getType()).toRgbCss()).css("width",perc+"%")
-					).append(
-						$('<div>').css("background-color",currentTcObject.getInterface().getColor(2).toRgbCss()).css("width",(100-perc)+"%")
-					).appendTo(body);
-				}
+				updateBody();
+			}
+		}
+
+		this.updateComment = function(tcObject, newComment) {
+			if(tcObject==currentTcObject) {
+				if(!currentComment || currentComment[1]=="") body.prepend(commentDiv);
+				currentComment = newComment;
+				updateHead();
+				updateBody();
 			}
 		}
 
@@ -1306,7 +1381,7 @@ function Warpgate() {
 		var loadAnimStartTime, lastRenderTime;
 		var lastTranslationX, lastTranslationY, currentTranslationX, currentTranslationY;
 		var lastScale, currentScale;
-		var lastMovePos, wasDragged, justClicked;
+		var lastMovePos, wasDragged, justClicked, justDoubleClicked;
 		var W,H,mousePos;
 		
 		this.getCenterX = function() {
@@ -1323,6 +1398,10 @@ function Warpgate() {
 
 		this.wasJustClicked = function() {
 			return justClicked;
+		}
+
+		this.wasJustDoubleClicked = function() {
+			return justDoubleClicked;
 		}
 		
 		var interpolateLoadAnimation = function(time, index, num) {
@@ -1383,6 +1462,7 @@ function Warpgate() {
 			
 			detailDisplay.fin();
 			justClicked = false;
+			justDoubleClicked = false;
 			window.requestAnimationFrame(draw);
 		}
 		
@@ -1424,7 +1504,7 @@ function Warpgate() {
 		var dragEnd = function() {
 			$(window).unbind("mousemove",dragDo).unbind("mouseup",dragEnd);
 			if(!wasDragged) {
-				justClicked = true;
+				justClicked = !justClicked;
 			}
 		}
 		
@@ -1445,6 +1525,10 @@ function Warpgate() {
 			W = viewport.width();
 			H = viewport.height();
 			canvas.attr("width",W).attr("height",H);
+		}
+
+		var onDoubleClick = function() {
+			justDoubleClicked = true;
 		}
 		
 		;(function() {
@@ -1468,7 +1552,7 @@ function Warpgate() {
 			var scr = Math.sqrt((1-Math.pow(1-(1-config.window.scaleMin)/config.window.scaleMax,2))*d*d);
 			
 			window.requestAnimationFrame(draw);
-			canvas.mousedown(dragBegin).mousemove(updateMousePos);
+			canvas.mousedown(dragBegin).mousemove(updateMousePos).dblclick(onDoubleClick);
 			$(window).scrollTop(d-scr).scroll(zoom).resize(onViewportResize);
 		})();
 	}
@@ -1489,7 +1573,7 @@ function Warpgate() {
 		}
 		
 		var display = function() {
-			tparea.show().animate({opacity:1},{duration:config.tpupdate.opacityAnimationDuration,easing:config.tpupdate.opacityAnimationEasingFunction});
+			tparea.show().animate({opacity:1},{duration:config.editor.opacityAnimationDuration,easing:config.editor.opacityAnimationEasingFunction});
 			enabled = true;
 			var speed = changingInterface.getThroughput().getUnitValue();
 			tpvalue.val(speed[0]);
@@ -1508,7 +1592,7 @@ function Warpgate() {
 
 		var cancel = function() {
 			enabled = false;
-			tparea.stop(true).animate({opacity:0},{duration:config.tpupdate.opacityAnimationDuration,easing:config.tpupdate.opacityAnimationEasingFunction,complete:cancelComplete});
+			tparea.stop(true).animate({opacity:0},{duration:config.editor.opacityAnimationDuration,easing:config.editor.opacityAnimationEasingFunction,complete:cancelComplete});
 		}
 		
 		var cancelComplete = function() {
@@ -1525,7 +1609,6 @@ function Warpgate() {
 			if(enabled) {
 				var speed = NetworkSpeed.byUnitValue(tpvalue.val(),tpunit.val());
 				changingInterface.setThroughput(speed);
-				jQuery.getJSON("warpgate.php?op=3&dev="+changingInterface.getName()+"&tp="+speed.getValue());
 				cancel();
 			}
 		}
@@ -1540,6 +1623,72 @@ function Warpgate() {
 			$("#tpcancel").click(cancel);
 			tpunit.change(unitChanged);
 			changingInterface = null;
+			enabled = false;
+			queued = false;
+		})();
+		
+	}
+
+	function CommentEditor() {
+		var careaDiv, cheadDiv, chead, cbody;
+		var changingObject, enabled, queued;
+
+		this.initChange = function(obj) {
+			if(changingObject==null) {
+				changingObject = obj;
+				display();
+			} else {
+				if(enabled) cancel();
+				changingObject = obj;
+				queued = true;
+			}
+		}
+		
+		var display = function() {
+			careaDiv.show().animate({opacity:1},{duration:config.editor.opacityAnimationDuration,easing:config.editor.opacityAnimationEasingFunction});
+			enabled = true;
+			var comment = changingObject.getComment();
+			if(!comment) comment = ["",""];
+			chead.val(comment[0]);
+			cbody.val(comment[1]);
+			var color = changingObject.getInterface().getColor(changingObject.getType()).toRgbCss();
+			cheadDiv.text("edit comment of "+changingObject.getDescriptor()).css("background-color",color);
+			careaDiv.css("border-color",color);
+		}
+
+		var cancel = function() {
+			enabled = false;
+			careaDiv.stop(true).animate({opacity:0},{duration:config.editor.opacityAnimationDuration,easing:config.editor.opacityAnimationEasingFunction,complete:cancelComplete});
+		}
+		
+		var cancelComplete = function() {
+			if(queued) {
+				queued = false;
+				display();
+			} else {
+				changingObject = null;
+				careaDiv.hide();
+			}
+		}
+
+		var update = function() {
+			if(enabled) {
+				var head = chead.val();
+				var body = cbody.val();
+				changingObject.setComment(head,body);
+				detailDisplay.updateComment(changingObject, [head,body]);
+				cancel();
+			}
+		}
+		
+		;(function() {
+			careaDiv = $("#commenteditor");
+			cheadDiv = $("#chead1");
+			chead = $("#chead");
+			cbody = $("#cbody");
+			$("#cform").submit(update);
+			$("#ccancel").click(cancel);
+			changingObject = null;
 			enabled = false;
 			queued = false;
 		})();
@@ -1605,8 +1754,7 @@ function Warpgate() {
 
 		var onInterfacesReceive = function(data) {
 			for(var i=0; i<data.length; i++) {
-				var throughput = data[i].throughput ? data[i].throughput : data[i].link;
-				interfaceList.addInterface(data[i].name, data[i].link, throughput);
+				interfaceList.addInterface(data[i].name, data[i].link, data[i].throughput, data[i].comments);
 			}
 			setInterval(refreshData, config.load.updateInterval);
 		}
@@ -1620,6 +1768,7 @@ function Warpgate() {
 		var interfaceList = new InterfaceList();
 		globalRenderer = new GlobalRenderer(interfaceList);
 		detailDisplay = new DetailDisplay();
+		commentEditor = new CommentEditor();
 		new DataAggregator(interfaceList);
 	})();
 

@@ -21,11 +21,13 @@
 		<div></div>
 		<div></div>
 	</div>
-	<div id="throughputarea">
+	<div id="throughputarea" class="editor">
 		<div id="tphead">edit eth0 maximum throughput</div>
 		<div>
 			<form id="tpform" action="javascript:void()">
-			<div id="tptext">Please enter the maximum achievable throughput speed for eth0:</div>
+			<div id="tptext">
+				Please enter the maximum achievable throughput speed for eth0:
+			</div>
 			<div>
 				<input type="number" name="tpvalue" id="tpvalue" min="0" step="any" required="required" />
 				<select name="unit" id="tpunit">
@@ -35,7 +37,27 @@
 					<option value="1000000000">GBit/s</option>
 				</select>
 			</div>
-			<div><button id="tpcancel" type='button'>cancel</button><input type="submit" value="confirm" /></div>
+			<div>
+				<button id="tpcancel" type='button'>cancel</button><input type="submit" value="confirm" />
+			</div>
+			</form>
+		</div>
+	</div>
+	<div id="commenteditor" class="editor">
+		<div id="chead1">edit comment of qdisc pfifo_fast 0:0</div>
+		<div>
+			<form id="cform" action="javascript:void()">
+			<div>
+				enter a comment headline:<br>
+				<input type="text" name="chead" id="chead" size="50" />
+			</div>
+			<div>
+				enter a comment:<br>
+				<textarea name="cbody" id="cbody" cols="50" rows="10"></textarea>
+			<div>
+			<div>
+				<button id="ccancel" type='button'>cancel</button><input type="submit" value="save" />
+			</div>
 			</form>
 		</div>
 	</div>

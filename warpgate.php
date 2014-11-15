@@ -1,9 +1,5 @@
 <?php
 
-function readFileArr($fn) {
-	return file($fn, FILE_IGNORE_NEW_LINES);
-}
-
 function dieErr($msg) {
 	die('{"error":"'.$msg.'"}');
 }
@@ -15,11 +11,9 @@ function safeexec() {
 	}
 	$cmd = call_user_func_array("sprintf", $args);
 	exec($cmd, $result, $exitCode);
-	//echo $cmd."<br>";
 
 	if($exitCode!==0) dieErr('system call failed: '.$cmd);
 	return $result;
-	//return 0;
 }
 
 function readConfig() {
@@ -56,45 +50,32 @@ function getInterfaceList() {
 				break;
 		}
 	}
-	echo json_encode($interfaces);
+	return $interfaces;
 }
 
 function fetchInterfaces() {
-	// read interface list using ip tool
-	$input = safeexec("ip link show");
-	//$input = readarr("ils.txt");
-
+	$list = getInterfaceList();
 	$config = readConfig();
-
 	$interfaces = array();
-	for($i=0; $i<count($input); $i++) {
-		if(preg_match('/^[0-9]+: (.*):.*/U', $input[$i],$match) && $match[1]!="lo") {
-			$interface = array();
-			$interface["name"] = $match[1];
 
-			// read link speed using ethtool
-			$input2 = safeexec("ethtool %s",$interface["name"]);
-			//$input2 = readarr("ethtool.txt");
-			for($j=0; $j<count($input2); $j++) {
-				if(preg_match('/^\\s*Speed: ([0-9]+)Mb\\/s.*/U', $input2[$j], $match2)) {
-					$interface["link"] = $match2[1]*1000*1000;
-					break;
-				}
-			}
+	for($i=0; $i<count($list); $i++) {
+		$interface = array();
+		$interface["name"] = $list[$i];
+		$interface["link"] = file_get_contents("/sys/class/net/".$interface["name"]."/speed")*1000*1000;
 
-			if(!isset($interface["link"])) continue;
-			if(isset($config[$interface["name"]]["throughput"])) {
-				$interface["throughput"] = $config[$interface["name"]]["throughput"];
-			} else {
-				$interface["throughput"] = $interface["link"];
-			}
-			if(isset($config[$interface["name"]]["comments"])) {
-				$interface["comments"] = $config[$interface["name"]]["comments"];
-			} else {
-				$interface["comments"] = array();
-			}
-			array_push($interfaces, $interface);
+		if(isset($config[$interface["name"]]["throughput"])) {
+			$interface["throughput"] = $config[$interface["name"]]["throughput"];
+		} else {
+			$interface["throughput"] = $interface["link"];
 		}
+
+		if(isset($config[$interface["name"]]["comments"])) {
+			$interface["comments"] = $config[$interface["name"]]["comments"];
+		} else {
+			$interface["comments"] = array();
+		}
+
+		array_push($interfaces, $interface);
 	}
 
 	echo json_encode($interfaces);
@@ -114,7 +95,6 @@ function fetchInterfaceStats($dev) {
 
 	// read qdiscs using tc
 	$input = safeexec("tc -s qdisc show dev %s",$dev);
-	//$input = readarr("qdiscs.txt");
 
 	for($i=0; $i<count($input); $i++) {
 		// read qdisc IDs
@@ -152,7 +132,6 @@ function fetchInterfaceStats($dev) {
 
 	// read classes using tc
 	$input = safeexec("tc -s class show dev %s",$dev);
-	//$input = readarr("classes.txt");
 
 	for($i=0; $i<count($input); $i++) {
 		// read class IDs
@@ -204,12 +183,18 @@ function fetchInterfaceStats($dev) {
 		if($isHTB) {
 			array_push($class, $rate, $ceil);
 		}
-		//var_dump($class);
-		//echo '<br><br>';
+
 		array_push($objects, $class);
 	}
 
-	echo json_encode(array("dev"=>$dev, "objects"=>$objects));
+	// read interfaces TX
+	$list = getInterfaceList();
+	$interfaceStats = array();
+	for($i=0; $i<count($list); $i++) {
+		$interfaceStats[$list[$i]] = file("/sys/class/net/".$list[$i]."/statistics/tx_bytes")[0]*1;
+	}
+
+	echo json_encode(array("dev"=>$dev, "objects"=>$objects, "intstats"=>$interfaceStats));
 }
 
 function setInterfaceThroughput($dev, $tp) {
@@ -223,25 +208,28 @@ function setInterfaceThroughput($dev, $tp) {
 	saveConfig($config);
 }
 
-function setTcObjectComment($dev, $obj, $cmh, $cmb) {
+function setTcObjectComment($dev, $obj, $head, $body) {
 	if(!ctype_alnum($dev)) dieErr("malformed dev");
 
 	$config = readConfig();
 	if(!is_array($config[$dev])) $config[$dev] = array();
-	if(!is_array($config[$dev]["comments"])) $config[$dev]["comments"] = array();
-	$config[$dev]["comments"][$obj] = array($cmh, $cmb);
+	if(strlen($head)==0 && strlen($body)==0) {
+		if(is_array($config[$dev]["comments"])) {
+			unset($config[$dev]["comments"][$obj]);
+		}
+	} else {
+		if(!is_array($config[$dev]["comments"])) $config[$dev]["comments"] = array();
+		$config[$dev]["comments"][$obj] = array($head, $body);
+	}
 	saveConfig($config);
 }
 
-/*if(!isset($_GET["op"])) dieErr("no operation");
+if(!isset($_GET["op"])) dieErr("no operation");
 $op = $_GET["op"];
 if($op==1) fetchInterfaces();
 elseif($op==2) fetchInterfaceStats(@$_GET["dev"]);
 elseif($op==3) setInterfaceThroughput(@$_GET["dev"],@$_GET["tp"]);
-elseif($op==4) setTcObjectComment(@$_GET["dev"],@$_GET["obj"],@$_GET["cmh"],@$_GET["cmb"]);
-else dieErr("unknown operation: ".$op);*/
-
-getInterfaceList();
-
+elseif($op==4) setTcObjectComment(@$_GET["dev"],@$_GET["obj"],@$_POST["head"],@$_POST["body"]);
+else dieErr("unknown operation: ".$op);
 
 ?>

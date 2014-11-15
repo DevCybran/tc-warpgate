@@ -88,7 +88,7 @@ div.ifselector>div:last-child>div:last-child>div:last-child {
 	z-index: 1;
 }
 
-div#throughputarea {
+div.editor {
 	display: none;
 	opacity: 0;
 	position: absolute;
@@ -101,7 +101,7 @@ div#throughputarea {
 	color: #FFFFFF;
 }
 
-div#throughputarea>div:first-child {
+div.editor>div:first-child {
 	display: block;
 	font-size: 1.3em;
 	font-weight: bold;
@@ -110,13 +110,13 @@ div#throughputarea>div:first-child {
 	background-color: #FF0000;
 }
 
-div#throughputarea>div:last-child {
+div.editor>div:last-child {
 	display: block;
 	font-size: 1em;
 	margin: 20px;
 }
 
-div#throughputarea>div:last-child div {
+div.editor>div:last-child div {
 	margin: 5px 0px;
 }
 

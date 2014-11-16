@@ -507,21 +507,8 @@ function Warpgate() {
 			
 			return false;
 		}
-
-		this.drawConnection = function(ctx) {
-			if(frameStartAngle==frameEndAngle || destAngle==Math.PI*2) return;
-			var lineAngle = frameStartAngle+(frameEndAngle-frameStartAngle)/2;
-			var x1 = Math.cos(lineAngle);
-			var y1 = Math.sin(lineAngle);
-			ctx.strokeStyle = config.ring.connectionColor.toRgbaCss(frameOpacity);
-			ctx.beginPath();
-			ctx.moveTo(x1*innerRadius+frameCenterX,y1*innerRadius+frameCenterY);
-			ctx.lineTo(x1*self.getParent().getOuterRadius()+frameCenterX,y1*self.getParent().getOuterRadius()+frameCenterY);
-			ctx.stroke();
-		}
 		
 		this.drawWarning = function(ctx) {
-			if(frameStartAngle==frameEndAngle) return;
 			if(frameCurrentRate>config.ring.warningThreshold*tcObject.getCeil()) {
 				ctx.strokeStyle = config.ring.warningColor.toRgbaCss(frameOpacity);
 				ctx.beginPath();
@@ -901,14 +888,6 @@ function Warpgate() {
 		
 		var renderRings = function(ctx, time, timediff) {
 			ctx.globalCompositeOperation = "source-over";
-
-			// draw connections
-			ctx.lineWidth = 1;
-			ctx.lineJoin = "miter";
-			recurRing(interfac.getDev(), function(ring) {
-				ring.drawConnection(ctx);
-				return false;
-			});
 			
 			// draw warnings
 			warningAnimTime+= timediff;

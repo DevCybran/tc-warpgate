@@ -27,7 +27,6 @@ var config = {
 	},
 	ring: {
 		backgroundColor: Color.hsv(0,0,0.2),
-		connectionColor: Color.hsv(0,0,0.1),
 		widthMin: 15,										// width in pixels
 		widthMax: 30,										// width in pixels
 		widthStart: 30,									// root ring width in pixels

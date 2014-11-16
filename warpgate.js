@@ -1258,7 +1258,7 @@ function Warpgate() {
 		var displayDiv, head, body;
 		var commentDiv;
 		var normalTable, ctBitDiv, ctByteDiv, byteStatDiv, byteStatUnitDiv, packetStatDiv, packetStatUnitDiv;
-		var htbTable, rateDiv, ceilDiv, ratePercDiv, ceilPercDiv, htbDivisorDiv, rateDivisorDiv, ceilDivisorDiv;
+		var rateTable, rateDiv, ceilDiv, ratePercDiv, ceilPercDiv, htbDivisorDiv, rateDivisorDiv, ceilDivisorDiv;
 		var currentTcObject, currentComment;
 		var updated = 0;
 
@@ -1279,11 +1279,11 @@ function Warpgate() {
 			packetStatDiv = $('<div>').appendTo(normalTable.find('tr:nth-child(3)').children('td:nth-child(2)'));
 			packetStatUnitDiv = $('<div>').appendTo(normalTable.find('tr:nth-child(3)').children('td:last-child'));
 
-			htbTable = $('<table><tr><td></td><td><div class="invis">(100%)</div></td><td width="100%">&nbsp;</td><td align="right"><div class="invis">(100%)</div></td><td></td></table>');
-			rateDiv = $('<div>').appendTo(htbTable.find('tr').children('td:first-child'));
-			ratePercDiv = $('<div>').appendTo(htbTable.find('tr').children('td:nth-child(2)'));
-			ceilPercDiv = $('<div>').appendTo(htbTable.find('tr').children('td:nth-child(4)'));
-			ceilDiv = $('<div>').appendTo(htbTable.find('tr').children('td:nth-child(5)'));
+			rateTable = $('<table><tr><td></td><td><div class="invis">(100%)</div></td><td width="100%">&nbsp;</td><td align="right"><div class="invis">(100%)</div></td><td></td></table>');
+			rateDiv = $('<div>').appendTo(rateTable.find('tr').children('td:first-child'));
+			ratePercDiv = $('<div>').appendTo(rateTable.find('tr').children('td:nth-child(2)'));
+			ceilPercDiv = $('<div>').appendTo(rateTable.find('tr').children('td:nth-child(4)'));
+			ceilDiv = $('<div>').appendTo(rateTable.find('tr').children('td:nth-child(5)'));
 
 			htbDivisorDiv = $('<div class="ratedivisor">');
 			rateDivisorDiv = $('<div>').appendTo(htbDivisorDiv);
@@ -1322,6 +1322,11 @@ function Warpgate() {
 				var perc = (currentTcObject.getRate()/currentTcObject.getCeil()*100) << 0;
 				rateDivisorDiv.css("width",perc+"%");
 				ceilDivisorDiv.css("width",(100-perc)+"%");
+			} else {
+				rateDiv.text('implicit rate: '+NetworkSpeed.byValue(currentTcObject.getRate()).toText());
+				ratePercDiv.text('('+((Math.min(1,currentTcObject.getCurrentRate()/currentTcObject.getRate())*100)<<0)+'%)');
+				ceilDiv.text('');
+				ceilPercDiv.text('');
 			}
 		}
 
@@ -1343,8 +1348,8 @@ function Warpgate() {
 			updateBody();
 
 			if(currentComment && currentComment[1]!="") body.append(commentDiv);
-			body.append(normalTable);
-			if(currentTcObject instanceof HtbObject) body.append(htbTable, htbDivisorDiv);
+			body.append(normalTable, rateTable);
+			if(currentTcObject instanceof HtbObject) body.append(htbDivisorDiv);
 			displayDiv.show();
 		}
 

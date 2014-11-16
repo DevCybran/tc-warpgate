@@ -921,16 +921,19 @@ function Warpgate() {
 
 	function InterfaceSelector(list, interfac) {
 		var self = this;
-		var interfaceDiv, nameDiv, dummySpeedDiv, highlightDiv, dummyNameDiv, speedContainerDiv, speedDiv, speedHightlightDiv;
+		var interfaceDiv, nameDiv, currentThroughputDiv, throughputValueDiv, dummyMaxTpDiv, highlightDiv, dummyNameDiv, dummyCurrentThroughputDiv, speedContainerDiv, maxTpDiv, speedHightlightDiv;
 		
 		;(function() {
 			interfaceDiv = $('<div class="ifselector">').css("z-index",20000-interfac.getIndex());
 			nameDiv = $('<div>').text(interfac.getName()).appendTo(interfaceDiv);
-			dummySpeedDiv = $('<div>').appendTo(interfaceDiv).text(interfac.getThroughput().toText);
+			currentThroughputDiv = $('<div>').append($('<div class="invis">333.33 MBit/s</div>')).appendTo(interfaceDiv);
+			throughputValueDiv = $('<div>').text('0 Bit/s').appendTo(currentThroughputDiv);
+			dummyMaxTpDiv = $('<div>').appendTo(interfaceDiv).text(interfac.getThroughput().toText);
 			highlightDiv = $('<div>').css("background-color",interfac.getColor(0).toRgbCss()).appendTo(interfaceDiv);
 			dummyNameDiv = $('<div>').text(interfac.getName()).appendTo(highlightDiv);
+			dummyCurrentThroughputDiv = $('<div>').text('0 Bit/s').appendTo(highlightDiv);
 			speedContainerDiv = $('<div>').appendTo(highlightDiv);
-			speedDiv = $('<div>').appendTo(speedContainerDiv).text(interfac.getThroughput().toText);
+			maxTpDiv = $('<div>').appendTo(speedContainerDiv).text(interfac.getThroughput().toText);
 			speedHightlightDiv = $('<div>').css("background-color",interfac.getColor(1).toRgbCss()).appendTo(speedContainerDiv);
 			list.add(interfaceDiv);
 		})();
@@ -938,11 +941,16 @@ function Warpgate() {
 		this.getOffset = function() {
 			return interfaceDiv.position().left+interfaceDiv.outerWidth(true)/2;
 		}
+
+		this.setCurrentThroughput = function(throughputSpeed) {
+			var txt = throughputSpeed.toText();
+			throughputValueDiv.text(txt);
+		}
 		
-		this.setThroughput = function(throughputClass) {
-			var txt = throughputClass.toText();
-			dummySpeedDiv.text(txt);
-			speedDiv.text(txt);
+		this.setMaxThroughput = function(throughputSpeed) {
+			var txt = throughputSpeed.toText();
+			dummyMaxTpDiv.text(txt);
+			maxTpDiv.text(txt);
 		}
 		
 		this.setInactive = function() {
@@ -954,7 +962,7 @@ function Warpgate() {
 			var init = list.getCurrentSelector()==null;
 			if(init) {
 				interfaceDiv.css("visibility","visible").css("top",-interfaceDiv.height()).animate({top:"0px"},{duration:config.selector.selectAnimationDuration,easing:config.selector.selectAnimationEasingFunction});
-				highlightDiv.animate({height:"200%"},{duration:config.selector.selectAnimationDuration,easing:config.selector.selectAnimationEasingFunction});
+				highlightDiv.animate({height:"150%"},{duration:config.selector.selectAnimationDuration,easing:config.selector.selectAnimationEasingFunction});
 				interfaceDiv.mouseenter(enterActive);
 				list.initContainer(self.getOffset());
 			} else {
@@ -980,7 +988,7 @@ function Warpgate() {
 			}
 			interfaceDiv.stop(true).delay(config.selector.showAnimationDurationOffset*interfaceDiv.index()).animate({top:"0px"},{duration:config.selector.showAnimationDuration,easing:config.selector.showAnimationEasingFunction});
 			interfaceDiv.mouseenter(function() {
-				highlightDiv.stop(true).animate({height:"200%"},{duration:config.selector.selectAnimationDuration,easing:config.selector.selectAnimationEasingFunction});
+				highlightDiv.stop(true).animate({height:"150%"},{duration:config.selector.selectAnimationDuration,easing:config.selector.selectAnimationEasingFunction});
 			}).mouseleave(function() {
 				highlightDiv.stop(true).animate({height:(interfac.isSelected() ? "100%" : "0%")},{duration:config.selector.selectAnimationDuration,easing:config.selector.selectAnimationEasingFunction});
 			}).click(function() {
@@ -995,7 +1003,7 @@ function Warpgate() {
 		this.hide = function() {
 			var cnt = list.getCount();
 			if(interfac.isSelected()) {
-				highlightDiv.stop(true).animate({height:"200%"},{duration:config.selector.selectAnimationDuration,easing:config.selector.selectAnimationEasingFunction});
+				highlightDiv.stop(true).animate({height:"150%"},{duration:config.selector.selectAnimationDuration,easing:config.selector.selectAnimationEasingFunction});
 				interfaceDiv.stop(true).delay(config.selector.showAnimationDurationOffset*cnt).animate({top:-interfaceDiv.position().top},{duration:config.selector.showAnimationDuration,easing:config.selector.showAnimationEasingFunction});
 				interfaceDiv.mouseenter(enterActive);
 			} else {
@@ -1009,7 +1017,7 @@ function Warpgate() {
 	function Interface(list,index,name,link,throughput,comments) {
 		var self = this;
 		var dev, renderer, selector, colors;
-		var lastUpdateTime;
+		var lastTxBytes, lastTxUpdateTime, lastUpdateTime;
 		
 		this.getIndex = function() {
 			return index;
@@ -1041,10 +1049,10 @@ function Warpgate() {
 			jQuery.post("warpgate.php?op=4&dev="+name+"&obj="+objID, {head:head,body:body});
 		}
 		
-		this.setThroughput = function(newThroughput) {
+		this.setMaxThroughput = function(newThroughput) {
 			throughput = newThroughput;
 			dev.getRing().setChildrenNeedUpdate();
-			selector.setThroughput(newThroughput);
+			selector.setMaxThroughput(newThroughput);
 			jQuery.getJSON("warpgate.php?op=3&dev="+name+"&tp="+newThroughput.getValue());
 		}
 		
@@ -1074,6 +1082,20 @@ function Warpgate() {
 				list.setSelectedInterface(self);
 			}
 		}
+
+		this.getLastTxBytes = function() {
+			return lastTxBytes;
+		}
+
+		this.updateTxBytes = function(txBytes, time) {
+			if(lastTxBytes!=-1) {
+				var diff = (txBytes-lastTxBytes)/(time-lastTxUpdateTime)*1000;
+				var tpSpeed = NetworkSpeed.byValue(diff*8);
+				selector.setCurrentThroughput(tpSpeed);
+			}
+			lastTxBytes = txBytes;
+			lastTxUpdateTime = time;
+		}
 		
 		this.prepareUpdate = function() {
 			dev.invalidate();
@@ -1094,6 +1116,7 @@ function Warpgate() {
 			renderer = new InterfaceRenderer(self);
 			selector = new InterfaceSelector(list.getSelectorList(), self);
 			lastUpdateTime = -config.load.missingUpdateAnimationDelay;
+			lastTxBytes = -1;
 		})();
 		
 	}
@@ -1613,7 +1636,7 @@ function Warpgate() {
 		var update = function() {
 			if(enabled) {
 				var speed = NetworkSpeed.byUnitValue(tpvalue.val(),tpunit.val());
-				changingInterface.setThroughput(speed);
+				changingInterface.setMaxThroughput(speed);
 				cancel();
 			}
 		}
@@ -1721,6 +1744,18 @@ function Warpgate() {
 			var diPacketStats = 7;
 			var diHTBRate = 8;
 			var diHTBCeil = 9;
+
+			var time = performance.now();
+
+			var interfaces = interfaceList.getInterfaces();
+			for (var i = interfaces.length - 1; i >= 0; i--) {
+				var name = interfaces[i].getName();
+				if(data.intstats[name]) {
+					interfaces[i].updateTxBytes(data.intstats[name], time);
+				} else {
+					interfaces[i].updateTxBytes(interfaces[i].getLastTxBytes(), time);
+				}
+			};
 			
 			var dataInterface = interfaceList.getInterface(data.dev);
 			if(dataInterface==null) {
@@ -1729,7 +1764,6 @@ function Warpgate() {
 			}
 			
 			dataInterface.prepareUpdate();
-			var time = performance.now();
 			var dev = dataInterface.getDev();
 			
 			for(var i=0; i<data.objects.length; i++) {

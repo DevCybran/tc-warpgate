@@ -799,7 +799,7 @@ function Warpgate() {
 		this.updateValues = function(time, newByteStats, newPacketStats) {
 			lastCurrentRate = currentRate;
 			if(lastByteStats!=-1) {
-				currentRate = (newByteStats-lastByteStats)/(time-lastValueUpdateTime)*1000;
+				currentRate = (newByteStats-lastByteStats)*8*1000/(time-lastValueUpdateTime);
 			}
 			lastByteStats = newByteStats;
 			lastPacketStats = newPacketStats;
@@ -1775,9 +1775,9 @@ function Warpgate() {
 					var childClass = TcObjectPrototype.getClass(childData[diType],childData[diScheduler]);
 					var child = parent.getOrCreateChild(childClass, childData[diType], childData[diQdiscID], childData[diClassID], childData[diScheduler]);
 					if(childClass==HtbObject) {
-						child.updateValues(time, childData[diByteStats]*8, childData[diPacketStats], childData[diHTBRate], childData[diHTBCeil]);
+						child.updateValues(time, childData[diByteStats], childData[diPacketStats], childData[diHTBRate], childData[diHTBCeil]);
 					} else {
-						child.updateValues(time, childData[diByteStats]*8, childData[diPacketStats]);
+						child.updateValues(time, childData[diByteStats], childData[diPacketStats]);
 					}
 				}
 			}

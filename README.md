@@ -15,4 +15,4 @@ A realtime monitoring GUI for linux' tc qdiscs and classes.
 
 Read more at https://github.com/DevCybran/tc-warpgate/wiki
 
-![The warpgate in action!](http://warpgate.dl.ntcomputer.de/images/warpgate1s.jpg)
+[![The warpgate in action!](http://warpgate.dl.ntcomputer.de/images/warpgate1s.jpg)](http://warpgate.dl.ntcomputer.de/images/warpgate1.jpg)
